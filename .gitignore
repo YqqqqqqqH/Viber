@@ -1,0 +1,20 @@
+# 只上传作品（berkson、luanjiyuan……）和 skills/
+# 试拍和上游 skill 的参考克隆不进仓库
+/threebody3d/
+/vibe-knowledge-film/
+
+# 依赖
+node_modules/
+__pycache__/
+*.pyc
+
+# 渲染中间产物：每次渲染都会覆盖。定稿另存到 <作品>/versions/vN.mp4
+renders/
+review/
+**/audio/*.wav
+
+# 杂项
+_*.txt
+Thumbs.db
+desktop.ini
+.DS_Store
