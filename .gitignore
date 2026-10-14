@@ -2,6 +2,9 @@
 # 试拍和上游 skill 的参考克隆不进仓库
 /threebody3d/
 /vibe-knowledge-film/
+# 第三方 skill（xilo-opus-video、huashu-art-motion、lemo-opuscar）和参考库（mg-styles-15）
+/.claude/skills/
+/refs/
 
 # 依赖
 node_modules/
