@@ -1,0 +1,24 @@
+《八毫米的楼》用到的第三方东西
+
+画法
+- anatomy kit：github.com/wheresryan22/anatomy @bc943e4，MIT 许可，原文见 kit/LICENSE。本地两处改动记在 kit/README.md。
+
+字体（都在 fonts/）
+- Noto Sans SC（思源黑体）：SIL Open Font License 1.1。字幕和片中中文。
+- Inter：SIL Open Font License 1.1。数字、读数、锁屏时间。
+- 霞鹜文楷 LXGW WenKai：SIL Open Font License 1.1。随项目模板复制进来，片中没有用到。
+
+声音
+- 全部由代码合成：拟音用 lemo-opuscar 的 sfx.py，配乐是 mix.py 里用 numpy 合成的铺底和钢片琴。没有采样，没有第三方音乐。
+
+工具
+- 渲染：lemo-opuscar 的 core/render（Playwright + FFmpeg）。
+- 验收：huashu-art-motion 的 film_gate.py，xilo-opus-video 的 analyze_video.py。
+
+资料（片中数字只取自 brief.md 的数据表，零件位置见 research/layout.md）
+- iFixit：iPhone 18 Pro Max 拆解、换电池指南、内部壁纸。
+- Apple：Newsroom、iPhone 18 Pro Max 维修手册、尺寸图。尺寸图只用于建模，片中没有复现图纸。
+- GSMArena、Wikipedia「iPhone 18 Pro」。
+
+商标
+- iPhone、Face ID、MagSafe、Action 键、Camera Control、A20 Pro 是 Apple Inc. 的商标。本片是独立制作的科普示意图，与 Apple 和 iFixit 都没有关系；零件的样子和尺寸是按公开资料画的示意。

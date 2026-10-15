@@ -8,6 +8,7 @@
 |---|---|---|---|
 | [berkson](berkson/) | 《伯克森悖论》：好看的人为什么好像都不靠谱 | v3 · 3:32 · 2D Canvas，有配乐和拟音 | [berkson/versions](berkson/versions/) |
 | [luanjiyuan](luanjiyuan/) | 《乱纪元》：为什么天气预报只能准一周 | v4 · 3:35 · 3D（Three.js），只有画面 | [luanjiyuan/versions](luanjiyuan/versions/) |
+| [iphone18](iphone18/) | 《八毫米的楼》：把 iPhone 18 Pro Max 拆成六层楼，一层层看里面有什么 | v1 · 2:23 · 等轴测零件图（anatomy kit，SVG），只有字幕，有配乐和拟音 | [iphone18/versions](iphone18/versions/) |
 
 每个作品的文件夹里：
 

@@ -1,0 +1,4 @@
+# 风格帧和分镜页里的字体是 fonts/ 的副本
+frames/*/fonts/
+storyboard/*/fonts/
+previews/*/fonts/
