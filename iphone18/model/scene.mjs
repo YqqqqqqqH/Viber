@@ -124,16 +124,16 @@ export function heatOverlay(P, R, { heat, prevVC, move }) {
 
 export const SCENE_CSS = `
 .isotherm{fill:none;stroke:var(--film-heat);stroke-width:calc(var(--px)*1.2);vector-effect:non-scaling-stroke}
-.prevvc{fill:var(--anatomy-shade-0);fill-opacity:.55;stroke:var(--anatomy-hi);stroke-width:calc(var(--px)*1.8);vector-effect:non-scaling-stroke;stroke-dasharray:calc(var(--px)*8) calc(var(--px)*5)}
-.vc-x{font-family:Inter,sans-serif;font-weight:600;fill:var(--anatomy-strong)}
-.socghost{fill:none;stroke:var(--anatomy-hi);stroke-width:calc(var(--px)*1.6);vector-effect:non-scaling-stroke;stroke-dasharray:calc(var(--px)*6) calc(var(--px)*4)}
-.soc-t{font-family:Inter,sans-serif;font-weight:500;fill:var(--anatomy-hi)}
+.prevvc{fill:var(--anatomy-shade-0);fill-opacity:.55;stroke:var(--f4,var(--anatomy-hi));stroke-width:calc(var(--px)*1.8);vector-effect:non-scaling-stroke;stroke-dasharray:calc(var(--px)*8) calc(var(--px)*5)}
+.vc-x{font-family:Inter,sans-serif;font-weight:600;fill:var(--f4t,var(--anatomy-strong))}
+.socghost{fill:none;stroke:var(--f2,var(--anatomy-hi));stroke-width:calc(var(--px)*1.6);vector-effect:non-scaling-stroke;stroke-dasharray:calc(var(--px)*6) calc(var(--px)*4)}
+.soc-t{font-family:Inter,sans-serif;font-weight:500;fill:var(--f2t,var(--anatomy-hi))}
 .hotspot{fill:var(--film-heat);opacity:.85}
 .lock-time{font-family:Inter,sans-serif;font-weight:250;fill:var(--anatomy-hi);letter-spacing:-.01em}
 .lock-date{font-family:Sans,sans-serif;fill:var(--anatomy-mid)}
 .lock-btn{fill:none;stroke:var(--anatomy-mid);stroke-width:calc(var(--px)*1.2);vector-effect:non-scaling-stroke}
 .lock-bar{fill:var(--anatomy-hi)}
-.field{fill:none;stroke:var(--anatomy-hi);stroke-width:calc(var(--px)*1.3);vector-effect:non-scaling-stroke;stroke-dasharray:calc(var(--px)*2) calc(var(--px)*9);stroke-linecap:round}
+.field{fill:none;stroke:var(--f0,var(--anatomy-hi));stroke-width:calc(var(--px)*1.3);vector-effect:non-scaling-stroke;stroke-dasharray:calc(var(--px)*2) calc(var(--px)*9);stroke-linecap:round}
 .iso{--film-heat:#ff6a4a}.iso[data-theme="light"]{--film-heat:#e5484d}
 `;
 

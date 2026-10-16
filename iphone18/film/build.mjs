@@ -34,6 +34,13 @@ function mono(keys) {
     return (2 * s3 - 3 * s2 + 1) * y[i] + (s3 - 2 * s2 + s) * h * m[i] + (-2 * s3 + 3 * s2) * y[i + 1] + (s3 - s2) * h * m[i + 1];
   };
 }
+// v2 runs 2:16: the first 44 s are tightened (explode a little, floors 1 and 2 by about a quarter) and the
+// rest moves up 6.8 s. Every motion, effect and readout keeps its v1 timing in "old" seconds; the page
+// maps film time to old time at the top of render(), events are mapped the other way. The camera is at
+// rest at each anchor, so the piecewise-linear map never breaks a moving shot.
+const WARP = [[0, 0], [5.2, 5.2], [11.9, 11.4], [26.7, 22.2], [39.6, 32.8], [142.8, 136.0]];
+const lerpOn = (pts, x, a, b) => { if (x <= pts[0][a]) return pts[0][b] + (x - pts[0][a]); for (let i = 0; i < pts.length - 1; i++) { const p = pts[i], q = pts[i + 1]; if (x <= q[a]) return p[b] + ((x - p[a]) * (q[b] - p[b])) / (q[a] - p[a]); } const l = pts[pts.length - 1]; return l[b] + (x - l[a]); };
+const toNew = (t) => lerpOn(WARP, t, 0, 1), toOld = (t) => lerpOn(WARP, t, 1, 0);
 const sstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 function poser(SH, FIN, UP, OPENZ, DOCK) {
   const f = {}; for (const key of Object.keys(SH)) f[key] = mono(SH[key]);
@@ -53,7 +60,7 @@ function poser(SH, FIN, UP, OPENZ, DOCK) {
   };
 }
 `;
-const { mono, poser, sstep } = new Function(POSE_JS + "; return { mono, poser, sstep };")();
+const { mono, poser, sstep, toNew } = new Function(POSE_JS + "; return { mono, poser, sstep, toNew };")();
 
 // ------------------------------------------------------------------ timeline (seconds; see 镜头表.md)
 const SUBS = JSON.parse(readFileSync(join(ROOT, "subs.json"), "utf8")).subs;
@@ -81,13 +88,14 @@ const LOCK = [[0, 0], [0.3, 0], [1.1, 1], [3.2, 1], [5.0, 0], [112.4, 0], [112.6
 const SWEEP = [[0, 1], [112.3, 1], [112.35, 0], [112.4, 0], [116.4, 1]];
 const IRGLOW = [[0, 0], [121.2, 0], [122.8, 1], [123.2, 1], [124.8, 0]];
 const FIELD = [[0, 0], [22.5, 0], [23.5, 1], [26.4, 1], [28.0, 0]];
-const FOCUS = { coil: [15.6, 16.2, 27, 29], antenna: [34.9, 35.5, 40, 41.5], buttons: [36.8, 37.4, 41, 42.5], soc: [59.0, 59.6, 70.6, 71.6], battery: [72.6, 73.4, 93.6, 94.6], vc: [95.0, 95.8, 110, 111.5], ir: [115.0, 115.6, 124.6, 125.4] };
+const FOCUS = { coil: [15.6, 16.2, 27, 29], antenna: [34.9, 35.5, 40, 41.5], buttons: [36.8, 37.4, 41, 42.5], soc: [59.0, 59.6, 70.6, 71.6], battery: [72.6, 73.4, 93.6, 94.6], vc: [95.0, 95.8, 103.4, 105.0], ir: [115.0, 115.6, 124.6, 125.4] };
 // the recap names the floors bottom to top; each lights as its word is read
 const RECAP = [130.6, 131.2, 131.8, 132.4, 133.0, 133.6];
-const TR = [[0, "iPhone 18 Pro Max"], [5.2, "八毫米的楼"]];
+const TITLE = "口袋里的六层楼";
+const TR = [[0, "iPhone 18 Pro Max"], [5.2, TITLE]];
 // the floor indicator (top left): which floor we are on, shown through the tour
-const FL = [[11.9, 0, "一楼 · 后盖玻璃"], [26.7, 1, "二楼 · 一体铝机身"], [39.6, 2, "三楼 · 零件层"], [72.0, 3, "四楼 · 电池"], [94.6, 4, "五楼 · 均热板"], [112.4, 5, "六楼 · 屏幕"]];
-const BR = [[0, "163.4 × 78.0 × 8.75 mm"], [15.5, "MagSafe 线圈 · 磁铁环"], [29.7, "85% 再生铝"], [43.6, "ƒ/1.48 · 开口 4.59 mm"], [59.0, "A20 Pro · 2 nm · 6 核 CPU"], [64.6, "双 16 核神经网络引擎"], [72.0, "粘在均热板背面"], [83.8, "eSIM 版 · 5567 mAh · 21.751 Wh"], [89.0, "运输中 < 20 Wh · 激活后解除"], [94.6, "14 颗 Torx Plus 螺丝"], [101.3, "均热板面积 3×"], [107.9, "持续性能最多 +40%"], [112.4, "6.9 英寸 · 2868 × 1320"], [119.6, "460 ppi · 隔一行少一行"], [125.0, "灵动岛更小"], [129.4, "6 层 · 8.75 mm"]];
+const FL = [[11.9, 0, "1F · 后盖和线圈"], [26.7, 1, "2F · 铝机身"], [39.6, 2, "3F · 光圈和芯片"], [72.0, 3, "4F · 电池"], [94.6, 4, "5F · 均热板"], [112.4, 5, "6F · 屏幕"]];
+const BR = [[0, "163.4 × 78.0 × 8.75 mm"], [15.5, "MagSafe 线圈 · 磁铁对位"], [29.7, "85% 回收铝"], [43.6, "ƒ/1.48 · 开口 4.59 mm"], [59.0, "A20 Pro · 2 nm · 6 核 CPU"], [64.6, "导热锁子甲 · 双 16 核神经网络引擎"], [72.0, "电池粘在均热板背面"], [83.8, "eSIM 版 5567 mAh · 21.751 Wh"], [89.0, "运输中 < 20 Wh · 激活后解除"], [94.6, "14 颗 Torx Plus 螺丝"], [101.3, "面积 ×3"], [107.9, "持续性能最多 +40%"], [112.4, "6.9 英寸 · 460 ppi"], [119.6, "隔一行少一行 · 红外透光"], [125.0, "灵动岛变小"], [129.4, "6 层 · 8.75 mm"]];
 const EV = [
   { t: 0.5, type: "wake" },
   { t: 5.25, type: "rise", n: 0 }, { t: 5.85, type: "rise", n: 1 }, { t: 6.45, type: "rise", n: 2 }, { t: 7.05, type: "rise", n: 3 }, { t: 10.2, type: "settle" },
@@ -130,6 +138,8 @@ const GRPS = [...new Set(items.map((x) => x.grp))];
 // ghosted while we look through the glass at the IR camera: every display layer but the pixel patch and the marks
 const GH = items.map((x) => (x.grp === "display" && !/^display\.(pixels|marks)/.test(x.it.name || "") ? 1 : 0));
 const FLI = items.map((x) => (x.grp.startsWith("mc:") ? 2 : FLOOR_OF[x.grp] ?? -1));
+// each floor has its own colour (see brief, 色彩脚本); the IR camera wears the screen's colour, it moves there
+const ACC = items.map((x) => (x.grp === "ir" ? 5 : x.grp.startsWith("mc:") ? 2 : FLOOR_OF[x.grp] ?? -1));
 console.log("items", items.length, "groups", GRPS.join(" "));
 
 // ------------------------------------------------------------------ depth order at samples
@@ -159,6 +169,13 @@ if (!SK.length) for (const t of SAMPLES) {
 }
 if (!existsSync(cacheFile)) writeFileSync(cacheFile, JSON.stringify(SK));
 console.log("depth samples", SAMPLES.length, existsSync(cacheFile) ? "(cached " + cacheKey + ")" : "", "in", ((Date.now() - t0) / 1000).toFixed(0), "s");
+
+// the antenna splits are two hairlines on the outside of the left wall; the settle files them under the wall
+// they are drawn on, so draw them right after the last chassis part at every sample
+{
+  const ant = items.filter((x) => x.tag === "antenna").map((x) => x.i), ch = items.filter((x) => x.grp === "chassis" && x.tag !== "antenna").map((x) => x.i);
+  for (const [, keys] of SK) { const top = Math.max(...ch.map((i) => keys[i])); for (const i of ant) keys[i] = +(top + 0.001).toFixed(4); }
+}
 
 // ------------------------------------------------------------------ camera path
 const at = (m, grp, u, v, w) => { const d = m[grp] || [0, 0, 0]; const p = W3(u, v, w); return k.iso([p[0] + d[0], p[1] + d[1], p[2] + d[2]], P); };
@@ -253,13 +270,13 @@ const ROUTE = (() => {
 
 // ------------------------------------------------------------------ page
 const order = [...items].sort((a, b) => SK[0][1][a.i] - SK[0][1][b.i]);
-const body = order.map((x) => `<g class="it" data-i="${x.i}"${x.tag ? ` data-tag="${x.tag}" data-idx="${x.idx}"` : ""}>${x.it.svg}</g>`).join("\n");
+const body = order.map((x) => `<g class="it" data-i="${x.i}"${ACC[x.i] >= 0 ? ` style="--acc:var(--f${ACC[x.i]})"` : ""}${x.tag ? ` data-tag="${x.tag}" data-idx="${x.idx}"` : ""}>${x.it.svg}</g>`).join("\n");
 const axis = (v) => k.axisVector(P, v).map((n) => +n.toFixed(5));
 const DATA = {
   P: { origin: P.origin, scale: P.scale, az: P.azimuth, el: P.elevation }, U,
   AX: [axis([1, 0, 0]), axis([0, 1, 0]), axis([0, 0, 1])],
   GRPS, GR: items.map((x) => GRPS.indexOf(x.grp)), LOD: items.map((x) => x.it.lod || null), GH, FLI,
-  SK, CAM, SUBS, DUR, SH, FIN, UP, OPENZ, DOCK, IRIS, HEAT, PREV, LOCK, SWEEP, IRGLOW, FIELD, FOCUS, RECAP, TR, FL, BR, EV,
+  SK, CAM, SUBS, DUR, DURN: +toNew(DUR).toFixed(2), SH, FIN, UP, OPENZ, DOCK, IRIS, HEAT, PREV, LOCK, SWEEP, IRGLOW, FIELD, FOCUS, RECAP, TR, FL, BR, EV: EV.map((e) => ({ ...e, t: +toNew(e.t).toFixed(3) })),
   RB: 2.75, HEATR: 92 * U, LOCKH: 163.4 * U, base: [0, 0, 1920, 1080],
 };
 // six floating slabs climbing to the right, like the building; the current floor is filled
@@ -269,9 +286,10 @@ const html = `<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>八毫米的楼</title>
+<title>口袋里的六层楼</title>
 <style>
 @font-face{font-family:Sans;src:url(fonts/NotoSansSC-500.woff)}
+@font-face{font-family:Sans;src:url(fonts/NotoSansSC-700.woff);font-weight:700}
 @font-face{font-family:Inter;src:url(fonts/Inter-var.woff);font-weight:100 900}
 ${k.ISO_CSS}
 html,body{margin:0;height:100%;overflow:hidden;background:var(--anatomy-page)}
@@ -279,31 +297,47 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--anatomy-page)}
 /* video: phones and H.264 flatten the light theme's pale ramp, so it is lifted one step */
 .iso[data-theme="light"]{--anatomy-shade-0:#d0d0cc;--anatomy-shade-1:#dbdbd7;--anatomy-shade-2:#e5e5e1;--anatomy-shade-3:#eeeeea;--anatomy-lit-shade:#e3e3df;--anatomy-mid:#76767b;--anatomy-lo:#a2a2a7;--anatomy-faint:#c6c6c9;--anatomy-dot:#2e2e32}
 .iso-solid.ring>.iso-fill,.iso-solid.ring>.iso-top{fill-rule:evenodd}
-.mc-blade{fill:var(--anatomy-top)}.port{fill:var(--film-port)}.iso{--film-port:#060606;--film-ir:#5fd3d6}.iso[data-theme="light"]{--film-ir:#138a90;--film-port:#cfcfcc}
+/* 色彩脚本: one colour per floor, 1F amber, 2F blue, 3F violet, 4F green, 5F coral (the heat), 6F teal (the IR light).
+   --fN draws lines and fills, --fNt is the darker shade used for text on paper */
+.iso{--f0:#e8a252;--f1:#62a0f0;--f2:#a08af2;--f3:#62c46e;--f4:#ff7a5c;--f5:#33c3c7;--f0t:#f0b76e;--f1t:#86b6f4;--f2t:#b9a8f6;--f3t:#86d290;--f4t:#ff9a82;--f5t:#5fd3d6}
+.iso[data-theme="light"]{--f0:#d4862f;--f1:#3b7dd8;--f2:#7b5cd6;--f3:#3fa34d;--f4:#e5533d;--f5:#149ca0;--f0t:#a85f12;--f1t:#245fae;--f2t:#5a3db5;--f3t:#2b7d37;--f4t:#bf3a26;--f5t:#0d7a7e}
+.mc-blade{fill:color-mix(in srgb,var(--f2) 16%,var(--anatomy-top))}#iris-blades .iso-line[data-tone="lit"]{stroke:var(--f2)}
+.port{fill:var(--film-port)}.iso{--film-port:#060606;--film-ir:var(--f5)}.iso[data-theme="light"]{--film-port:#cfcfcc}
 .vc-win{fill:var(--anatomy-shade-0)}.sheet{fill:var(--film-sheet);fill-rule:evenodd}.island{fill:var(--film-void)}.cc-win{fill:var(--anatomy-shade-1)}.mc-void{fill:var(--film-void)}
 .iso{--film-void:#040404;--film-sheet:#0c0c0c}.iso[data-theme="light"]{--film-void:#3a3a3e;--film-sheet:#e4e4e1}
 ${SCENE_CSS}
 /* one lit part at a time: --on (0..1) per item mixes its edges toward the lit ink; --dim steps the rest down */
 #world{--dim:0}.it{--on:0}
-.it .iso-edge[data-tone="hi"]{stroke:color-mix(in srgb,var(--anatomy-lit) calc(var(--on)*100%),color-mix(in srgb,var(--anatomy-mid) calc(var(--dim)*(1 - var(--on))*72%),var(--anatomy-hi)))}
-.it .iso-edge[data-tone="mid"]{stroke:color-mix(in srgb,var(--anatomy-lit) calc(var(--on)*100%),var(--anatomy-mid))}
-.it .iso-edge[data-tone="lo"]{stroke:color-mix(in srgb,var(--anatomy-lit) calc(var(--on)*100%),var(--anatomy-lo))}
-.iso-line.turn,.iso-line.mesh-l,.iso-line.adh{--on:0;stroke:color-mix(in srgb,var(--anatomy-lit) calc(var(--on)*100%),var(--anatomy-lo))}
+.it .iso-edge[data-tone="hi"]{stroke:color-mix(in srgb,var(--acc,var(--anatomy-lit)) calc(var(--on)*100%),color-mix(in srgb,var(--anatomy-mid) calc(var(--dim)*(1 - var(--on))*72%),var(--anatomy-hi)))}
+.it .iso-edge[data-tone="mid"]{stroke:color-mix(in srgb,var(--acc,var(--anatomy-lit)) calc(var(--on)*100%),var(--anatomy-mid))}
+.it .iso-edge[data-tone="lo"]{stroke:color-mix(in srgb,var(--acc,var(--anatomy-lit)) calc(var(--on)*100%),var(--anatomy-lo))}
+.iso-line.turn,.iso-line.mesh-l,.iso-line.adh{--on:0;stroke:color-mix(in srgb,var(--acc,var(--anatomy-lit)) calc(var(--on)*100%),var(--anatomy-lo))}
+/* a lit part takes its floor's colour: lines fully, faces as a light tint */
+.it{--tint:18%}
+.it .iso-solid>.iso-top{fill:color-mix(in srgb,var(--acc,var(--anatomy-lit)) calc(var(--on)*var(--tint)),var(--anatomy-top))}
+.it .iso-solid>.iso-fill{fill:color-mix(in srgb,var(--acc,var(--anatomy-lit)) calc(var(--on)*var(--tint)),var(--anatomy-paper))}
+.it .iso-solid>.iso-shade[data-shade="0"]{fill:color-mix(in srgb,var(--acc,var(--anatomy-lit)) calc(var(--on)*var(--tint)),var(--anatomy-shade-0))}
+.it .iso-solid>.iso-shade[data-shade="1"]{fill:color-mix(in srgb,var(--acc,var(--anatomy-lit)) calc(var(--on)*var(--tint)),var(--anatomy-shade-1))}
+.it .iso-solid>.iso-shade[data-shade="2"]{fill:color-mix(in srgb,var(--acc,var(--anatomy-lit)) calc(var(--on)*var(--tint)),var(--anatomy-shade-2))}
+.it .iso-solid>.iso-shade[data-shade="3"]{fill:color-mix(in srgb,var(--acc,var(--anatomy-lit)) calc(var(--on)*var(--tint)),var(--anatomy-shade-3))}
+/* the antenna splits are plain lines on the wall: they light as heavy lines in the floor colour */
+.it[data-tag="antenna"] .iso-line{stroke:color-mix(in srgb,var(--acc,var(--anatomy-lit)) calc(var(--on)*100%),var(--anatomy-lo));stroke-width:calc(var(--anatomy-weight) * (1 + var(--on) * 1.6))}
 /* a lit part also draws heavier, so it stands out from neighbours drawn the same way */
 .it .iso-edge{stroke-width:calc(var(--anatomy-weight) * (1 + var(--on) * .8))}
 /* the battery's glue strips seen through the vapor chamber (hidden lines), lit while the 12 V is on */
-.iso-line.adhg{--on:0;stroke:color-mix(in srgb,var(--anatomy-lit) calc(var(--on)*100%),var(--anatomy-mid));stroke-width:calc(var(--anatomy-weight) * (1 + var(--on)));stroke-dasharray:calc(var(--px)*7) calc(var(--px)*5);opacity:0}
+.iso-line.adhg{--on:0;stroke:color-mix(in srgb,var(--f3) calc(var(--on)*100%),var(--anatomy-mid));stroke-width:calc(var(--anatomy-weight) * (1 + var(--on)));stroke-dasharray:calc(var(--px)*7) calc(var(--px)*5);opacity:0}
 /* capacity gauge on the cell */
 .cap-box{fill:var(--anatomy-card);stroke:var(--anatomy-hi);stroke-width:calc(var(--px)*1.6);vector-effect:non-scaling-stroke}
-.cap-cell{fill:var(--anatomy-lit);fill-opacity:0;stroke:var(--anatomy-lo);stroke-width:calc(var(--px)*1);vector-effect:non-scaling-stroke}
+.cap-cell{fill:var(--f3);fill-opacity:0;stroke:var(--anatomy-lo);stroke-width:calc(var(--px)*1);vector-effect:non-scaling-stroke}
 .cap-line{stroke:var(--anatomy-lit);stroke-width:calc(var(--px)*2.6);vector-effect:non-scaling-stroke}
 .cap-t{font-family:Inter,sans-serif;font-weight:600;fill:var(--anatomy-strong)}
 .cap-lockb{fill:var(--anatomy-lit)}.cap-shk{fill:none;stroke:var(--anatomy-lit);stroke-width:calc(var(--px)*3.2);vector-effect:non-scaling-stroke}
 /* IR camera: the guide down to the lens is dashed (hidden); the marks are heavy */
 #ir-guide .iso-line{stroke-dasharray:calc(var(--px)*6) calc(var(--px)*5)}
 #ir-mark .iso-line,#isl-mark .iso-line{stroke-width:calc(var(--anatomy-weight) * 2)}
-.route{fill:none;stroke:var(--anatomy-lit);stroke-width:calc(var(--px)*2.4);vector-effect:non-scaling-stroke;stroke-dasharray:calc(var(--px)*12) calc(var(--px)*8);stroke-linecap:round;stroke-linejoin:round}
-.route-end{fill:var(--anatomy-lit);stroke:var(--anatomy-lit);stroke-width:calc(var(--px)*1.5);vector-effect:non-scaling-stroke;stroke-linejoin:round}
+#ir-guide .iso-line,#ir-mark .iso-line,#isl-mark .iso-line{stroke:var(--f5)}
+.route{fill:none;stroke:var(--f5);stroke-width:calc(var(--px)*2.4);vector-effect:non-scaling-stroke;stroke-dasharray:calc(var(--px)*12) calc(var(--px)*8);stroke-linecap:round;stroke-linejoin:round}
+.route-end{fill:var(--f5);stroke:var(--f5);stroke-width:calc(var(--px)*1.5);vector-effect:non-scaling-stroke;stroke-linejoin:round}
 /* iris blades heavier so the six can be counted */
 #iris-blades .iso-line{stroke-width:calc(var(--anatomy-weight) * 1.8)}
 #stage{position:fixed;inset:0;background:var(--anatomy-card);--anatomy-paper:var(--anatomy-card)}
@@ -313,20 +347,22 @@ ${SCENE_CSS}
 .corner.tl{top:calc(var(--px)*22);left:calc(var(--px)*26);color:var(--anatomy-text)}
 .corner.tr{top:calc(var(--px)*22);right:calc(var(--px)*26)}
 .corner.bl{bottom:calc(var(--px)*22);left:calc(var(--px)*26)}
-.corner.br{bottom:calc(var(--px)*16);right:calc(var(--px)*26);color:var(--anatomy-strong);letter-spacing:.04em;text-transform:none;font-family:Inter,Sans,sans-serif;font-size:calc(var(--px)*30);padding:calc(var(--px)*4) calc(var(--px)*12);border-radius:calc(var(--px)*6);background:color-mix(in srgb,var(--anatomy-card) 82%,transparent)}
+.corner.br{bottom:calc(var(--px)*16);right:calc(var(--px)*26);color:var(--anatomy-strong);letter-spacing:.04em;text-transform:none;font-family:Inter,Sans,sans-serif;font-size:calc(var(--px)*30);box-shadow:inset calc(var(--px)*5) 0 0 var(--cur,transparent);padding:calc(var(--px)*4) calc(var(--px)*12);border-radius:calc(var(--px)*6);background:color-mix(in srgb,var(--anatomy-card) 82%,transparent)}
 #stair{position:absolute;top:calc(var(--px)*56);left:calc(var(--px)*14);display:flex;align-items:flex-end;gap:calc(var(--px)*14);opacity:0;padding:calc(var(--px)*8) calc(var(--px)*14);border-radius:calc(var(--px)*8);background:color-mix(in srgb,var(--anatomy-card) 82%,transparent)}
 #stair svg{width:calc(var(--px)*168);height:calc(var(--px)*105);overflow:visible}
-#stair .st path{stroke:var(--anatomy-mid);stroke-width:2;stroke-linejoin:round}
-#stair .st-top{fill:var(--anatomy-card)}#stair .st-side{fill:var(--anatomy-shade-1)}
-#stair .st.on path{fill:var(--anatomy-lit);stroke:var(--anatomy-lit)}
+#stair .st[data-f="0"]{--c:var(--f0)}#stair .st[data-f="1"]{--c:var(--f1)}#stair .st[data-f="2"]{--c:var(--f2)}#stair .st[data-f="3"]{--c:var(--f3)}#stair .st[data-f="4"]{--c:var(--f4)}#stair .st[data-f="5"]{--c:var(--f5)}
+#stair .st path{stroke:color-mix(in srgb,var(--c) 55%,var(--anatomy-mid));stroke-width:2;stroke-linejoin:round}
+#stair .st-top{fill:color-mix(in srgb,var(--c) 16%,var(--anatomy-card))}#stair .st-side{fill:color-mix(in srgb,var(--c) 34%,var(--anatomy-card))}
+#stair .st.on path{fill:var(--c);stroke:var(--c)}
 #stair-t{font-family:Sans,sans-serif;font-size:calc(var(--px)*32);line-height:1;color:var(--anatomy-strong);letter-spacing:.04em;white-space:nowrap;padding-bottom:calc(var(--px)*4)}
 #sub{position:absolute;left:0;right:0;bottom:calc(var(--px)*92);text-align:center;font-family:Sans,sans-serif;font-size:calc(var(--px)*50);line-height:1.3;color:var(--anatomy-strong);letter-spacing:.04em}
+#sub .hl{font-weight:700}
 #sub span{display:inline-block;padding:calc(var(--px)*6) calc(var(--px)*22);border-radius:calc(var(--px)*6);background:color-mix(in srgb,var(--anatomy-card) 80%,transparent)}
 </style>
 </head>
 <body class="iso" data-theme="light">
 <div id="stage">
-<svg id="fig" class="iso-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice" role="img" aria-label="iPhone 18 Pro Max 拆成六层">
+<svg id="fig" class="iso-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice" role="img" aria-label="口袋里的六层楼：iPhone 18 Pro Max 拆成六层">
 <g id="world">
 ${body}
 </g>
@@ -379,6 +415,8 @@ const stairEl = el('stair'), stairT = el('stair-t'), slabs = [...document.queryS
 const onv = new Float32Array(N), lastOn = new Float32Array(N).fill(-1), lastOp = new Float32Array(N).fill(-1);
 let lastFloor = -2;
 const fade = (a, b, c, d, t) => sstep(a, b, t) * (1 - sstep(c, d, t));
+const RISE = [5.0, 7.0, 6.4, 5.8, 5.8, 5.2];   // when each floor starts to lift (back, chassis, internals, battery, vc, display)
+const HL = /【(?:(\d)\|)?([^】]+)】/g, plain = (x) => x.replace(HL, '$2');
 const fieldPath = field ? field.querySelector('path') : null;
 // ---- iris, rebuilt from the f-number each frame (same geometry as model/maincam.mjs)
 const RAD = Math.PI / 180, cA = Math.cos(D.P.az * RAD), sA = Math.sin(D.P.az * RAD), cE = Math.cos(D.P.el * RAD), sE = Math.sin(D.P.el * RAD), KK = D.P.scale * Math.sqrt(1.6);
@@ -405,7 +443,8 @@ function drawIris(f) {
 }
 const subEl = document.getElementById('sub'), trEl = document.getElementById('c-tr'), brEl = document.getElementById('c-br');
 const pick = (list, t) => { let r = list[0][1]; for (const x of list) if (t >= x[0]) r = x[1]; return r; };
-function render(t) {
+function render(tn) {
+  const t = toOld(tn);                    // everything below runs on v1 seconds; subtitles run on film time
   // floors and the main camera
   const m = moves(t);
   const off = D.GRPS.map((g) => { const v = m[g] || [0, 0, 0]; return [D.AX[0][0] * v[0] + D.AX[1][0] * v[1] + D.AX[2][0] * v[2], D.AX[0][1] * v[0] + D.AX[1][1] * v[1] + D.AX[2][1] * v[2]]; });
@@ -432,6 +471,8 @@ function render(t) {
   (TAG.magnet || []).forEach((n, j) => lift(+n.dataset.i, fade(21.3 + 0.12 * j, 21.6 + 0.12 * j, 27, 29, t)));
   (TAG.vcscrew || []).forEach((n, j) => { const a = 96.0 + 0.25 * j; const on = fade(a, a + 0.2, 100.2, 100.8, t); if (on > onv[+n.dataset.i]) onv[+n.dataset.i] = on; });
   if (t > 130 && t < 135.5) for (let i = 0; i < N; i++) { const f = D.FLI[i]; if (f >= 0) { const a = D.RECAP[f]; lift(i, fade(a, a + 0.3, a + 0.7, a + 1.1, t)); } }
+  // the six colours are introduced once: each floor tints as it lifts off, and they all fade before 1F
+  if (t > 4.9 && t < 11.9) for (let i = 0; i < N; i++) { const f = D.FLI[i]; if (f >= 0) { const a = RISE[f]; lift(i, 0.85 * fade(a, a + 0.6, 10.6, 11.7, t)); } }
   for (let i = 0; i < N; i++) if (Math.abs(onv[i] - lastOn[i]) > 1e-3) { byI[i].style.setProperty('--on', onv[i].toFixed(3)); lastOn[i] = onv[i]; }
   world.style.setProperty('--dim', dim.toFixed(3));
   turns.forEach((n, i) => n.style.setProperty('--on', fade(16 + 0.3 * i, 16.4 + 0.3 * i, 27, 29, t).toFixed(3)));
@@ -469,8 +510,13 @@ function render(t) {
   if (lockG) { lockG.setAttribute('opacity', Math.max(0, fLock(t)).toFixed(3)); lockR.setAttribute('height', (D.LOCKH * Math.min(1, Math.max(0, fSweep(t)))).toFixed(1)); }
   if (irg) irg.style.opacity = Math.max(0, fIr(t)).toFixed(3);
   // subtitles and corners
-  const s = D.SUBS.find((x) => t >= x[0] && t < x[1]);
-  if (s) { const a = Math.min(sstep(s[0], s[0] + 0.25, t), 1 - sstep(s[1] - 0.25, s[1], t)); subEl.innerHTML = '<span>' + s[2] + '</span>'; subEl.style.opacity = a.toFixed(3); } else subEl.innerHTML = '';
+  const s = D.SUBS.find((x) => tn >= x[0] && tn < x[1]);
+  let cf = -1; for (const x of D.FL) if (t >= x[0]) cf = x[1];
+  if (t >= 129.4) cf = -1;
+  // highlighted words take the current floor's colour; 【n|word】 forces floor n (the recap)
+  const hl = (x) => x.replace(HL, (m, n, w) => { const f = n !== undefined ? +n : cf; return '<b class="hl"' + (f >= 0 ? ' style="color:var(--f' + f + 't)"' : '') + '>' + w + '</b>'; });
+  if (s) { const a = Math.min(sstep(s[0], s[0] + 0.25, tn), 1 - sstep(s[1] - 0.25, s[1], tn)); subEl.innerHTML = '<span>' + hl(s[2]) + '</span>'; subEl.style.opacity = a.toFixed(3); } else subEl.innerHTML = '';
+  document.getElementById('stage').style.setProperty('--cur', cf >= 0 ? 'var(--f' + cf + ')' : 'transparent');
   trEl.textContent = pick(D.TR, t);
   let br = pick(D.BR, t);
   if (t >= 48.5 && t < 57.0) br = 'ƒ/' + f.toFixed(2) + (t < 54.4 ? ' · 开口 ' + (6.8 / f).toFixed(2) + ' mm' : ' · 进光量 ×' + ((4 / f) ** 2).toFixed(1));
@@ -479,11 +525,11 @@ function render(t) {
   // floor indicator
   stairEl.style.opacity = fade(11.9, 12.5, 129.0, 129.6, t).toFixed(3);
   let fl = -1, name = ''; for (const x of D.FL) if (t >= x[0]) { fl = x[1]; name = x[2]; }
-  if (fl !== lastFloor) { slabs.forEach((n, i) => n.classList.toggle('on', i === fl)); stairT.textContent = name; lastFloor = fl; }
+  if (fl !== lastFloor) { slabs.forEach((n, i) => n.classList.toggle('on', i === fl)); stairT.textContent = name; stairT.style.color = fl >= 0 ? 'var(--f' + fl + 't)' : ''; lastFloor = fl; }
 }
-window.DUR = D.DUR;
+window.DUR = D.DURN;
 window.EV = D.EV;
-window.TEXTS = (t) => { const s = D.SUBS.find((x) => t >= x[0] && t < x[1]); if (!s) return []; render(t); const b = subEl.firstChild.getBoundingClientRect(); return [{ id: 'sub' + D.SUBS.indexOf(s), text: s[2], x0: b.left, y0: b.top, x1: b.right, y1: b.bottom }]; };
+window.TEXTS = (t) => { const s = D.SUBS.find((x) => t >= x[0] && t < x[1]); if (!s) return []; render(t); const b = subEl.firstChild.getBoundingClientRect(); return [{ id: 'sub' + D.SUBS.indexOf(s), text: plain(s[2]), x0: b.left, y0: b.top, x1: b.right, y1: b.bottom }]; };
 window.render = render;
 await document.fonts.load('44px Sans'); await document.fonts.load('17px Inter'); await document.fonts.ready;
 render(+(q.get('t') || 0));
