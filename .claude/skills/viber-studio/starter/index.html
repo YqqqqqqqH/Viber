@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>film</title>
+<style>html, body { margin: 0; background: #000; overflow: hidden } canvas { display: block }</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<!-- 用 huashu 的绘画库（笔刷、相机、转场……）：把 util.js 和用到的库从
+     .claude/skills/huashu-art-motion/scripts/engine/lib/ 复制进本文件夹的 lib/，util.js 放第一个：
+<script src="lib/util.js"></script>
+<script src="lib/paint.js"></script>
+<script src="lib/brush.js"></script>
+     然后在下面的模块里先调 U.setStage(W, H)。 -->
+<script type="module">
+// 页面接口（lemo 的渲染、事件、阅读检查工具都按它来）：
+//   window.DUR            片长（秒）
+//   window.render(t)      画出第 t 秒，只由 t 决定：不用计时器、不存上一帧的状态，随机数带种子
+//   window.EV             画面上发生的每个动作一条 {t, type}，mix.py 按它放音效
+//   window.TEXTS(t)       第 t 秒屏上所有的字和它的框（像素），readcheck 查每段字停得够不够读完
+//   window.READY = true   字体、图片加载完再置位
+// 页面由 lemo 的服务器托管：本文件夹里的文件用相对路径，lemo 库里的用绝对路径（/core/lib.js、/node_modules/three/…）。
+import { clamp, eio } from '/core/lib.js';   // 还有 seg、ss、spring、mulberry（带种子随机）、vnoise、track……见 $LIB/core/lib.js
+
+const c = document.getElementById('c'), g = c.getContext('2d');
+const W = c.width = innerWidth, H = c.height = innerHeight, S = W / 1920;   // 按 1920 宽设计，S 换算草稿尺寸
+
+await new FontFace('Sans', 'url(fonts/NotoSansSC-500.woff)').load().then(f => document.fonts.add(f));
+
+// 镜头表：一行一镜，t0/t1 是全片时间，draw(lt, k) 拿到本镜内的秒数和 0→1 进度
+const SHOTS = [
+  { t0: 0, t1: 3, draw(lt, k) {
+      g.fillStyle = '#f3ead8'; g.fillRect(0, 0, W, H);
+      const x = (300 + 1320 * eio(k)) * S;                     // 球从左滚到右
+      g.fillStyle = '#c0392b'; g.beginPath(); g.arc(x, 540 * S, 110 * S, 0, Math.PI * 2); g.fill();
+  } },
+];
+// 字幕（不要字幕就留空）：画在底部一行，同时报给 TEXTS
+const SUBS = [
+  { t0: 0, t1: 3, text: '这是一行字幕' },   // 停留至少 中文字数÷4.5 + 1.5 秒，readcheck 会查
+];
+
+window.DUR = SHOTS[SHOTS.length - 1].t1;
+window.EV = [
+  { t: 0.2, type: 'whoosh' },
+];
+
+const subBox = s => {
+  g.font = `${46 * S}px Sans`;
+  const w = g.measureText(s.text).width;
+  return { x0: (W - w) / 2, y0: 968 * S, x1: (W + w) / 2, y1: 1024 * S };
+};
+window.TEXTS = t => SUBS.filter(s => t >= s.t0 && t < s.t1).map((s, i) => ({ id: 'sub' + SUBS.indexOf(s), text: s.text, ...subBox(s) }));
+
+window.render = t => {
+  const shot = SHOTS.find(s => t < s.t1) || SHOTS[SHOTS.length - 1];
+  const lt = t - shot.t0;
+  shot.draw(lt, clamp(lt / (shot.t1 - shot.t0)));
+  for (const s of SUBS) if (t >= s.t0 && t < s.t1) {
+    g.font = `${46 * S}px Sans`; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+    g.fillStyle = 'rgba(0,0,0,.35)'; const b = subBox(s); g.fillRect(b.x0 - 24 * S, b.y0 - 8 * S, b.x1 - b.x0 + 48 * S, b.y1 - b.y0 + 16 * S);
+    g.fillStyle = '#fff'; g.fillText(s.text, W / 2, 1010 * S);
+  }
+};
+
+await document.fonts.ready;
+window.render(0);
+window.READY = true;
+</script>
+</body>
+</html>

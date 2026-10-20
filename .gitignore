@@ -3,7 +3,9 @@
 /threebody3d/
 /vibe-knowledge-film/
 # 第三方 skill（xilo-opus-video、huashu-art-motion、lemo-opuscar）和参考库（mg-styles-15）
-/.claude/skills/
+# 我们自己写的项目 skill 要进仓库，逐个放行
+/.claude/skills/*
+!/.claude/skills/viber-studio/
 /refs/
 
 # 依赖
@@ -15,6 +17,8 @@ __pycache__/
 renders/
 review/
 **/audio/*.wav
+# 预览页的字体是作品 fonts/ 的副本
+**/previews/*/fonts/
 
 # 杂项
 _*.txt
