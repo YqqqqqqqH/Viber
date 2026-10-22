@@ -27,4 +27,4 @@
 
 [skills/](skills/)：我们一起定下来的做法。
 
-[.claude/skills/viber-studio/](.claude/skills/viber-studio/)：做片的总工作流。它把三个第三方 skill 串成一条线：xilo-opus-video 出方案和预览，lemo-opuscar 提供风格库和渲染、混音工具，huashu-art-motion 管镜头语言和成片把关。中间停四次给人看：方案、风格帧、分镜、成片。三个第三方 skill 不进仓库，安装方法见该目录下的 `references/工具命令.md`。
+[.claude/skills/viber-studio/](.claude/skills/viber-studio/)：做片的总工作流。它把三个第三方 skill 串成一条线：xilo-opus-video 出方案和预览，lemo-opuscar 提供风格卡和渲染、混音工具，huashu-art-motion 提供风格配方、解说语法，并管镜头语言和成片把关。中间停四次给人看：风格样片（从两家的风格库里挑几种，画同一个镜头来比）、方案、分镜、成片。三个第三方 skill 不进仓库，安装方法见该目录下的 `references/工具命令.md`。

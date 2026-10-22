@@ -17,8 +17,11 @@ __pycache__/
 renders/
 review/
 **/audio/*.wav
-# 预览页的字体是作品 fonts/ 的副本
+# 预览页、风格样片页的字体是作品 fonts/ 的副本；样片小样随时能重渲，只留拼图
 **/previews/*/fonts/
+**/styles/*/fonts/
+**/styles/*.mp4
+**/styles/*/*.mp4
 
 # 杂项
 _*.txt

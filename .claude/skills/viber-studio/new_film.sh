@@ -1,7 +1,7 @@
 #!/bin/sh
 # 开新片或开一个预览页（在 Git Bash 里跑，路径相对当前目录）：
 #   sh .claude/skills/viber-studio/new_film.sh <作品文件夹>                     整片：页面 + mix.py + build.sh + 字体 + 审片/
-#   sh .claude/skills/viber-studio/new_film.sh <作品文件夹>/previews/plan-a --page   只要一个页面（方案预览、风格帧）
+#   sh .claude/skills/viber-studio/new_film.sh <作品文件夹>/styles/1-ukiyoe --page   只要一个页面（风格样片、方案预览）
 set -e
 [ -n "$1" ] || { echo "用法：sh new_film.sh <文件夹> [--page]"; exit 1; }
 SK=$(cd "$(dirname "$0")" && pwd)
