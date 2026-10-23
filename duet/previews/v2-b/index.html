@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>duet v2 · plan B preview</title>
+<style>html, body { margin: 0; background: #000; overflow: hidden }</style>
+<script type="importmap">
+{ "imports": { "three": "/node_modules/three/build/three.module.js", "three/addons/": "/node_modules/three/examples/jsm/" } }
+</script>
+</head>
+<body>
+<script type="module">
+// v2 方案 B《Your Day, Mapped》预览：一天是一张手绘地图。每个 app 是岛上的一处地标（纸做的立体书，翻到那一页就立起来），
+// Claude 的陶土色路线一站站走过去；中途有一道门（Approve?）要你开。最后镜头升起来：整张地图就是你的这一天。
+// t 0–1：飞到 Calendar Peaks 旁边；1–2：高处看整张地图
+import { stage, Line, X, Y, THREE, caption, bez, poly } from './ink3d.js';
+import { clamp, lerp, seg, eio, mulberry, vnoise } from '/core/lib.js';
+
+const st = await stage({ fonts: [['Hand', 'fonts/Caveat-600.woff'], ['Inter', 'fonts/Inter-var.woff', { weight: '100 900' }]], sky: '#F0EADE', fog: '#F0EADE', fogNear: 60, fogFar: 160 });
+st.camera.far = 300; st.camera.updateProjectionMatrix();
+const TERRA = '#D97757', CLINE = '#CC6644', INK = '#1D1A17';
+const APPS = { gmail: '#EA4335', googlecalendar: '#4285F4', googledocs: '#4285F4', github: '#181717', slack: '#4A154B', stripe: '#635BFF', shopify: '#7AB55C' };
+const GLY = {}; for (const id in APPS) GLY[id] = new Path2D((await (await fetch(`assets/apps/${id}.svg`)).text()).match(/<path d="([^"]+)"/)[1]);
+const M0 = [600, 300], MW = 3400, MH = 2000;                      // 地图在纸上的范围（设计像素）
+
+// ---------- 岛：你的黑线画海岸线；Claude 的陶土线画路线 ----------
+const coast = []; for (let i = 0; i <= 400; i++) { const a = i / 400 * Math.PI * 2, r = 1 + .12 * Math.sin(a * 3 + 1) + .07 * Math.sin(a * 7 + 2) + .04 * Math.sin(a * 13); coast.push([M0[0] + MW / 2 + Math.cos(a) * MW * .44 * r, M0[1] + MH / 2 + Math.sin(a) * MH * .42 * r, 0]); }
+const YOU = new Line(st, { hw: .055 }); YOU.piece(coast, -3, -2); YOU.build();
+const SITES = [['gmail', 'Gmail Lighthouse', 1050, 760], ['googlecalendar', 'Calendar Peaks', 1700, 620], ['googledocs', 'Docs Library', 2450, 820], ['slack', 'Slack Harbour', 3150, 1150], ['stripe', 'Stripe Bridge', 2500, 1480], ['github', 'GitHub Woods', 1750, 1650], ['shopify', 'Shopify Market', 1050, 1420]];
+const route = [[880, 1000, 0]]; SITES.forEach(s => route.push([s[2], s[3] + 130, 0])); route.push([1500, 1150, 0]);
+const ROUTE = []; for (let i = 1; i < route.length; i++) { const a = route[i - 1], b = route[i], m = [(a[0] + b[0]) / 2 + (i % 2 ? 80 : -80), (a[1] + b[1]) / 2 + (i % 2 ? -60 : 60)]; ROUTE.push(...bez(a, m, m, b, 40).slice(i > 1 ? 1 : 0)); }
+// 虚线：一笔画里的「虚线」= 线抬起来再落下 —— 这里用一段段短线
+const CL = new Line(st, { hw: .04, ink: CLINE }); { let on = true, acc = 0; for (let i = 1; i < ROUTE.length; i++) { acc += Math.hypot(ROUTE[i][0] - ROUTE[i - 1][0], ROUTE[i][1] - ROUTE[i - 1][1]); if (acc > 38) { on = !on; acc = 0; } if (on) CL.piece([ROUTE[i - 1], ROUTE[i]], -3, -2); else CL.gapTo(ROUTE[i], -2); } } CL.build();
+
+// ---------- 纸面：海、河、标签、标题、指南针（贴图） ----------
+function plate(cx, cy, w, h, draw, z = .003, stand = false) {
+  const cv = document.createElement('canvas'); cv.width = Math.round(w); cv.height = Math.round(h); const g = cv.getContext('2d'); draw(g, w, h);
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+  const geo = new THREE.PlaneGeometry(w / 100, h / 100); if (stand) { geo.rotateX(Math.PI / 2); geo.translate(0, 0, h / 200); }
+  const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: tex, transparent: true, roughness: .9, depthWrite: !stand ? false : true, alphaTest: stand ? .05 : 0, side: THREE.DoubleSide }));
+  m.position.set(X(cx), Y(cy), z); m.renderOrder = stand ? 0 : 6; m.receiveShadow = true; st.scene.add(m); return m;
+}
+const hand = (g, s, x, y, size, col = INK, al = 'left') => { g.font = `${size}px Hand`; g.fillStyle = col; g.textAlign = al; g.fillText(s, x, y); g.textAlign = 'left'; };
+const ink = (g, w = 7, c = INK) => { g.strokeStyle = c; g.lineWidth = w; g.lineCap = g.lineJoin = 'round'; };
+const tok = (g, id, x, y, r) => { g.fillStyle = '#fff'; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); g.strokeStyle = APPS[id]; g.lineWidth = r * .1; g.stroke(); g.save(); g.translate(x - r * .55, y - r * .55); g.scale(r * 1.1 / 24, r * 1.1 / 24); g.fillStyle = APPS[id]; g.fill(GLY[id]); g.restore(); };
+// 海（岛外一圈淡蓝水彩）+ 岛（淡沙色）
+plate(M0[0] + MW / 2, M0[1] + MH / 2, MW * 1.15, MH * 1.2, (g, w, h) => {
+  const ox = (w - MW) / 2 - M0[0], oy = (h - MH) / 2 - M0[1]; g.translate(ox, oy);
+  g.fillStyle = 'rgba(156,195,236,.45)'; g.beginPath(); coast.forEach((p, i) => { const dx = p[0] - (M0[0] + MW / 2), dy = p[1] - (M0[1] + MH / 2); g.lineTo(M0[0] + MW / 2 + dx * 1.12, M0[1] + MH / 2 + dy * 1.14); }); g.fill();
+  g.fillStyle = '#F6EDE0'; g.beginPath(); coast.forEach(p => g.lineTo(p[0], p[1])); g.fill();
+  g.strokeStyle = 'rgba(156,195,236,.9)'; g.lineWidth = 26; g.lineCap = 'round'; g.beginPath(); g.moveTo(2700, 700); g.bezierCurveTo(2550, 1100, 2650, 1300, 2480, 1700); g.stroke();   // 河
+  SITES.forEach(([id, name, x, y]) => hand(g, name, x, y + 210, 56, INK, 'center'));
+  hand(g, '7:00', 860, 1060, 52, CLINE, 'center'); hand(g, 'done ✓', 1500, 1220, 56, CLINE, 'center');
+  ink(g, 5); g.beginPath(); g.roundRect(3300, 300, 560, 220, 30); g.stroke(); hand(g, 'Your Tuesday', 3580, 390, 76, INK, 'center'); hand(g, 'mapped by Claude Duet', 3580, 460, 44, '#6b6157', 'center');
+}, .001);
+// ---------- 立体书地标：翻到那一页就从纸上立起来 ----------
+const POP = [];
+function landmark(id, x, y, w, h, draw) { const m = plate(x, y, w, h, (g, W, H) => { draw(g, W, H); tok(g, id, W - 60, 60, 46); }, 0, true); POP.push(m); }
+landmark('gmail', 1050, 760, 260, 420, (g, w, h) => { ink(g); g.fillStyle = '#fff'; g.beginPath(); g.moveTo(90, h - 10); g.lineTo(110, 120); g.lineTo(150, 120); g.lineTo(170, h - 10); g.closePath(); g.fill(); g.stroke(); g.fillStyle = 'rgba(234,67,53,.75)'; [170, 250, 330].forEach(y => g.fillRect(104 - (y - 120) * .02, y, 52 + (y - 120) * .04, 34)); g.fillStyle = 'rgba(238,212,147,.9)'; g.beginPath(); g.arc(130, 92, 34, 0, 7); g.fill(); g.stroke(); });
+landmark('googlecalendar', 1700, 620, 640, 380, (g, w, h) => { ink(g); const P = [[20, h - 10], [110, 120], [190, 230], [290, 60], [380, 200], [470, 130], [560, 240], [620, h - 10]]; g.fillStyle = 'rgba(169,201,154,.8)'; g.beginPath(); P.forEach(p => g.lineTo(...p)); g.closePath(); g.fill(); g.stroke(); 'MTWTF'.split('').forEach((d, i) => hand(g, d, [110, 190, 290, 380, 470][i], [110, 220, 50, 190, 120][i] + 50, 40, INK, 'center')); ink(g, 5); g.beginPath(); g.moveTo(380, 200); g.lineTo(380, 120); g.stroke(); g.fillStyle = '#4285F4'; g.beginPath(); g.moveTo(380, 120); g.lineTo(440, 138); g.lineTo(380, 156); g.fill(); });
+landmark('googledocs', 2450, 820, 380, 320, (g, w, h) => { ink(g); g.fillStyle = 'rgba(156,195,236,.7)'; g.beginPath(); g.moveTo(20, 120); g.lineTo(190, 30); g.lineTo(360, 120); g.closePath(); g.fill(); g.stroke(); g.fillStyle = '#fff'; g.fillRect(50, 120, 280, h - 130); g.strokeRect(50, 120, 280, h - 130); [90, 160, 230].forEach(x => { g.strokeRect(x, 160, 40, h - 180); }); });
+landmark('slack', 3150, 1150, 420, 300, (g, w, h) => { ink(g); [[40, 'rgba(74,21,75,.75)'], [210, 'rgba(238,212,147,.9)']].forEach(([x, c]) => { g.fillStyle = c; g.beginPath(); g.moveTo(x + 70, 40); g.lineTo(x + 70, 200); g.lineTo(x + 150, 200); g.closePath(); g.fill(); g.stroke(); g.beginPath(); g.moveTo(x, 210); g.lineTo(x + 180, 210); g.lineTo(x + 150, 270); g.lineTo(x + 30, 270); g.closePath(); g.stroke(); }); });
+landmark('stripe', 2500, 1480, 560, 220, (g, w, h) => { ink(g); g.strokeStyle = '#635BFF'; g.lineWidth = 10; g.beginPath(); g.moveTo(20, h - 20); g.quadraticCurveTo(w / 2, 20, w - 20, h - 20); g.stroke(); ink(g); for (let x = 80; x < w - 60; x += 70) { const yy = h - 20 - (1 - ((x - w / 2) / (w / 2 - 20)) ** 2) * (h - 60) * .5; g.beginPath(); g.moveTo(x, yy); g.lineTo(x, h - 20); g.stroke(); } });
+landmark('github', 1750, 1650, 520, 340, (g, w, h) => { ink(g); [[90, 1], [220, 1.25], [360, 1.05]].forEach(([x, s]) => { g.fillStyle = 'rgba(169,201,154,.85)'; g.beginPath(); g.moveTo(x, 40 / s); g.lineTo(x + 80 * s, 240); g.lineTo(x - 80 * s, 240); g.closePath(); g.fill(); g.stroke(); g.beginPath(); g.moveTo(x, 240); g.lineTo(x, h - 10); g.stroke(); }); });
+landmark('shopify', 1050, 1420, 460, 280, (g, w, h) => { ink(g); [[30, 'rgba(122,181,92,.8)'], [240, 'rgba(233,164,134,.85)']].forEach(([x, c]) => { g.fillStyle = c; g.beginPath(); g.moveTo(x, 120); g.lineTo(x + 95, 40); g.lineTo(x + 190, 120); g.closePath(); g.fill(); g.stroke(); g.strokeRect(x + 20, 120, 150, h - 130); }); });
+// 指南针 = Duet 图标那一笔（陶土色底）
+const svg = await (await fetch('assets/claude-duet-icon.svg')).text(); const PS = [...svg.matchAll(/<path d="([^"]+)"([^>]*)>/g)];
+plate(3600, 1950, 460, 460, (g, w, h) => { g.scale(w / 1300, h / 1300); g.fillStyle = '#D97757'; g.fill(new Path2D(PS[1][1])); g.fillStyle = '#141413'; g.fill(new Path2D(PS[2][1]), 'evenodd'); }, .004);
+
+const D2R = Math.PI / 180;
+function camera(t) {
+  const c = st.camera;
+  if (t < 1) { c.position.set(X(1500), Y(1500), 5.6); c.lookAt(X(1750), Y(700), 1.2); }
+  else { const cen = [M0[0] + MW / 2 + 150, M0[1] + MH / 2 + 120], d = 44, el = 58 * D2R, az = -90 * D2R; c.position.set(X(cen[0]) + d * Math.cos(el) * Math.cos(az), Y(cen[1]) + d * Math.cos(el) * Math.sin(az), d * Math.sin(el)); c.lookAt(X(cen[0]), Y(cen[1]), 0); }
+  c.updateMatrixWorld(true);
+  st.sun.position.set(c.position.x - 6, c.position.y + 12, 30); st.sun.target.position.set(X(M0[0] + MW / 2), Y(M0[1] + MH / 2), 0);
+  Object.assign(st.sun.shadow.camera, { left: -30, right: 30, top: 30, bottom: -30, far: 120 }); st.sun.shadow.camera.updateProjectionMatrix();
+  st.post.dof.focus = t < 1 ? 10 : 44; st.post.dof.aper = t < 1 ? 45 : 10;
+}
+window.DUR = 2; window.EV = []; window.TEXTS = () => [];
+window.render = t => { YOU.update(t); CL.update(t); camera(t); st.draw(t); caption(st, t < 1 ? 'Meetings, booked.' : 'Your whole day, mapped.', -1, t); };
+await document.fonts.ready;
+window.render(0);
+window.READY = true;
+</script>
+</body>
+</html>

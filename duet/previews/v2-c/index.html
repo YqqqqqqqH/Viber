@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>duet v2 · plan C preview</title>
+<style>html, body { margin: 0; background: #000; overflow: hidden }</style>
+<script type="importmap">
+{ "imports": { "three": "/node_modules/three/build/three.module.js", "three/addons/": "/node_modules/three/examples/jsm/" } }
+</script>
+</head>
+<body>
+<script type="module">
+// v2 方案 C《Chain Reaction》预览：沿着 Duet 图标那一笔排了几百张多米诺纸牌，立着的时候是各个 app 的颜色，背面是墨黑。
+// 一推就一路倒下去，每一段倒完触发一件事；到「Approve?」那道门前整条链停住，等你开门。全倒完从上面看：黑色的背面连成图标那一笔。
+// t 0–1：低机位，链刚好倒到门前停住；1–2：高空看倒完的整条链，陶土色晕开
+import { stage, X, Y, THREE, caption } from './ink3d.js';
+import { clamp, lerp, seg, eio, mulberry } from '/core/lib.js';
+
+const st = await stage({ fonts: [['Hand', 'fonts/Caveat-600.woff'], ['Inter', 'fonts/Inter-var.woff', { weight: '100 900' }]], sky: '#F0EADE', fog: '#F0EADE', fogNear: 120, fogFar: 260 });
+st.camera.far = 400; st.camera.updateProjectionMatrix();
+const TERRA = '#D97757';
+const RAW = [[628, 625], [660, 640], [700, 650], [740, 640], [775, 625], [800, 612], [830, 595], [855, 560], [875, 520], [882, 480], [865, 450], [835, 445], [810, 465], [797, 500], [797, 545], [808, 580], [830, 605], [870, 625], [910, 640], [950, 648], [990, 640], [1015, 628], [1040, 610], [1062, 580], [1085, 540], [1095, 500], [1085, 460], [1060, 440], [1030, 440], [1000, 460], [980, 500], [972, 545], [982, 585], [1010, 615], [1045, 640], [1090, 655], [1140, 658], [1190, 650], [1230, 630], [1265, 600], [1290, 570], [1305, 553]]
+  .map(([x, y]) => [(x - 420) * 1300 / 1080, y * 1300 / 1080]);
+function catmull(P, per) { const o = []; for (let i = 0; i < P.length - 1; i++) { const p0 = P[Math.max(0, i - 1)], p1 = P[i], p2 = P[i + 1], p3 = P[Math.min(P.length - 1, i + 2)]; for (let k = i ? 1 : 0; k <= per; k++) { const t = k / per, t2 = t * t, t3 = t2 * t; o.push([0, 1].map(j => .5 * (2 * p1[j] + (-p0[j] + p2[j]) * t + (2 * p0[j] - 5 * p1[j] + 4 * p2[j] - p3[j]) * t2 + (-p0[j] + 3 * p1[j] - 3 * p2[j] + p3[j]) * t3))); } } return o; }
+const F = 7, G = [5000, 2000], toD = ([x, y]) => [G[0] + (x - 650) * F, G[1] + (y - 650) * F];
+const P = catmull(RAW, 20).map(toD);
+// 沿路径每 64px 放一张
+const PITCH = 64, DOM = []; { let acc = 0; for (let i = 1; i < P.length; i++) { const seg_ = Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]); acc += seg_; while (acc >= PITCH) { acc -= PITCH; const k = 1 - acc / seg_; DOM.push({ x: lerp(P[i - 1][0], P[i][0], k), y: lerp(P[i - 1][1], P[i][1], k), th: Math.atan2(-(P[i][1] - P[i - 1][1]), P[i][0] - P[i - 1][0]) }); } } }
+const N = DOM.length, GATE = Math.round(N * .64);                // 门在第二个圈的顶上附近
+// 每段一个 app 的颜色（倒之前看到的是颜色，倒下去露出墨黑的背面）
+const COLS = ['#EA4335', '#4285F4', '#7AB55C', '#635BFF', '#4A154B', '#4285F4', TERRA, '#181717', '#EED493'];
+const W = .62, Dp = .16, Hh = 1.15;
+const geo = new THREE.BoxGeometry(W, Dp, Hh);
+const mats = [0, 1, 2, 3, 4, 5].map(f => f === 3 ? new THREE.MeshStandardMaterial({ color: '#1A1714', roughness: .6 }) : new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: .55 }));
+const inst = new THREE.InstancedMesh(geo, mats, N); inst.castShadow = inst.receiveShadow = true; st.scene.add(inst);
+const C = new THREE.Color(); DOM.forEach((d, i) => { const c = COLS[Math.floor(i / N * COLS.length)]; C.set(c).lerp(new THREE.Color('#ffffff'), .12); inst.setColorAt(i, C); });
+const M = new THREE.Matrix4(), A = new THREE.Matrix4(), B = new THREE.Matrix4();
+function place(fallOf) {
+  DOM.forEach((d, i) => {
+    const phi = fallOf(i);
+    M.makeTranslation(X(d.x), Y(d.y), 0).multiply(A.makeRotationZ(d.th - Math.PI / 2))
+      .multiply(B.makeTranslation(0, Dp / 2, 0)).multiply(A.makeRotationX(-phi)).multiply(B.makeTranslation(0, -Dp / 2, Hh / 2));
+    inst.setMatrixAt(i, M);
+  });
+  inst.instanceMatrix.needsUpdate = true;
+}
+// 门：两根柱子一根横杆，横杆上挂「Approve?」
+const gd = DOM[GATE], gate = new THREE.Group(); st.scene.add(gate);
+{ const pm = new THREE.MeshStandardMaterial({ color: '#1D1A17', roughness: .5 }); [-1, 1].forEach(s => { const p = new THREE.Mesh(new THREE.CylinderGeometry(.06, .06, 2.2, 12), pm); p.rotation.x = Math.PI / 2; p.position.set(s * .75, 0, 1.1); p.castShadow = true; gate.add(p); });
+  const cv = document.createElement('canvas'); cv.width = 640; cv.height = 200; const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.beginPath(); g.roundRect(6, 6, 628, 188, 60); g.fill(); g.strokeStyle = TERRA; g.lineWidth = 10; g.stroke(); g.font = '120px Hand'; g.fillStyle = '#1D1A17'; g.textAlign = 'center'; g.fillText('Approve?', 320, 140);
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.9, .6), new THREE.MeshStandardMaterial({ map: tex, transparent: true, side: THREE.DoubleSide }));
+  sign.rotation.x = Math.PI / 2; sign.position.set(0, 0, 2.05); gate.add(sign); }
+gate.position.set(X(gd.x), Y(gd.y), 0); gate.rotation.z = 0;   // 牌子朝向镜头
+// 陶土色晕开（图标的色块 × 7）
+const svg = await (await fetch('assets/claude-duet-icon.svg')).text(); const BLOB = new Path2D([...svg.matchAll(/<path d="([^"]+)"/g)][1][1]);
+const bcv = document.createElement('canvas'); bcv.width = bcv.height = 1300; const bgc = bcv.getContext('2d'); bgc.globalAlpha = .85; bgc.fillStyle = TERRA; bgc.fill(BLOB);
+const btex = new THREE.CanvasTexture(bcv); btex.colorSpace = THREE.SRGBColorSpace;
+const bloom = new THREE.Mesh(new THREE.PlaneGeometry(1300 * F / 100, 1300 * F / 100), new THREE.MeshStandardMaterial({ map: btex, transparent: true, depthWrite: false })); bloom.position.set(X(G[0]), Y(G[1]), .001); st.scene.add(bloom);
+
+const D2R = Math.PI / 180;
+function camera(t) {
+  const c = st.camera;
+  if (t < 1) { const a = DOM[GATE - 14], b = DOM[GATE + 2]; c.position.set(X(a.x) - 3.2, Y(a.y) - 6.5, 2.4); c.lookAt(X(b.x), Y(b.y), 1.0); }
+  else { const cen = toD([660, 610]), d = 82, el = 87 * D2R; c.position.set(X(cen[0]), Y(cen[1]) - d * Math.cos(el), d * Math.sin(el)); c.lookAt(X(cen[0]), Y(cen[1]), 0); }
+  c.updateMatrixWorld(true);
+  st.sun.position.set(c.position.x - 8, c.position.y + 14, 40); st.sun.target.position.set(X(G[0]), Y(G[1]), 0);
+  Object.assign(st.sun.shadow.camera, { left: -45, right: 45, top: 45, bottom: -45, far: 150 }); st.sun.shadow.camera.updateProjectionMatrix();
+  st.post.dof.focus = t < 1 ? 8 : 82; st.post.dof.aper = t < 1 ? 55 : 6;
+}
+window.DUR = 2; window.EV = []; window.TEXTS = () => [];
+window.render = t => {
+  const front = t < 1 ? GATE : N + 5;                             // 门前：倒到门口为止；全景：全倒
+  place(i => i < front - 3 ? 84 * D2R : i < front ? (84 - (front - i) * 0) * D2R * (1 - (i - (front - 3)) / 4) : 0);
+  bloom.visible = t >= 1; gate.visible = t < 1;
+  camera(t); st.draw(t);
+  caption(st, t < 1 ? 'It asks before it acts.' : 'Every task, one stroke.', -1, t);
+};
+await document.fonts.ready;
+window.render(0);
+window.READY = true;
+</script>
+</body>
+</html>

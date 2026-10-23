@@ -1,8 +1,8 @@
-《Two Lines》Claude Duet 宣传片用到的第三方东西
+Claude Duet 宣传片（v1《Two Lines》、v2《The Ride》）用到的第三方东西
 
 画法
 - 风格：lemo-opuscar 的 one-line（一笔画）风格卡 + 本项目的 Three.js 3D 做法（house/three-3d），合成在 lib/ink3d.js 里，代码是这支片自己写的。
-- three.js r170（MIT），从 lemo-opuscar 的 node_modules 引用；景深、暗角用 lemo-opuscar 的 core/three/post.js。
+- three.js r170（MIT），从 lemo-opuscar 的 node_modules 引用（v2 的小车用了它的 addons/RoundedBoxGeometry）；景深、暗角用 lemo-opuscar 的 core/three/post.js。
 
 字体（都在 fonts/）
 - Caveat：© 2014 The Caveat Project Authors，SIL Open Font License 1.1。手写字幕和纸上的字。
@@ -21,7 +21,8 @@
 - 验收：huashu-art-motion 的 storyboard_lint.py、film_gate.py，xilo-opus-video 的 analyze_video.py。
 
 资料
-- 片中关于 Claude Duet 的说法（主动帮你盯着各个 app、每天的晨报、排会议和做 dashboard / 原型、发消息付款签字之前先问你、6,000+ connectors、research preview + waitlist）只取自 Anthropic 的发布文章：https://claude.com/resources/articles/claude-duet
+- 片中关于 Claude Duet 的说法（主动帮你盯着各个 app、每天的晨报、排会议和做 dashboard / 原型、发消息付款签字之前先问你、6,000+ connectors（v1）、research preview + waitlist）只取自 Anthropic 的发布文章：https://claude.com/resources/articles/claude-duet
+- v2 的过山车、两座小车、轨道就是图标那一笔，是这支片的比喻，不是产品功能。
 - 片中的 Dana、发票号、周四 2:00 等是示意场景，不是真实数据。Google Docs、Google Calendar、GitHub 没有在文章里被点名为 Duet 的连接器，是用户按自己用的 app 选的。
 
 商标

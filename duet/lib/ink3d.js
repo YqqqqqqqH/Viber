@@ -63,9 +63,10 @@ export async function stage(o = {}) {
     for (let i = 0; i < 1600; i++) { const v = vnoise(i * .13) - .5; x.fillStyle = `rgba(${v > 0 ? '255,252,244' : '170,150,120'},${Math.abs(v) * .03})`; x.beginPath(); x.arc(r() * 2048, r() * 1200, 20 + r() * 50, 0, 7); x.fill(); }
     for (let i = 0; i < 900; i++) { x.strokeStyle = `rgba(150,130,100,${.03 + r() * .05})`; x.lineWidth = .6; x.beginPath(); const a = r() * 6.3, px = r() * 2048, py = r() * 1200; x.moveTo(px, py); x.quadraticCurveTo(px + Math.cos(a) * 14 + r() * 6, py + Math.sin(a) * 14, px + Math.cos(a) * 28, py + Math.sin(a) * 28); x.stroke(); }
     for (let i = 0; i < 9000; i++) { x.fillStyle = `rgba(90,70,40,${.03 + r() * .06})`; x.fillRect(r() * 2048, r() * 1200, 1.2, 1.2); }
-    const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(260 / 34, 140 / 20);   // 纹理周期 34×20 单位（换场景要用）
-    const paper = new THREE.Mesh(new THREE.PlaneGeometry(260, 140), new THREE.MeshStandardMaterial({ map: t, roughness: .95 }));
-    paper.position.set(9.6 + 34 * 1.5, -5.4, 0); paper.receiveShadow = true; scene.add(paper);
+    const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; t.wrapS = t.wrapT = THREE.RepeatWrapping; const [PW, PH] = o.paperSize || [260, 140], PC = o.paperAt || [9.6 + 34 * 1.5, -5.4];
+    t.repeat.set(PW / 34, PH / 20);   // 纹理周期 34×20 单位（换场景要用）；o.paperSize / o.paperAt 改纸的大小和中心（世界单位）
+    const paper = new THREE.Mesh(new THREE.PlaneGeometry(PW, PH), new THREE.MeshStandardMaterial({ map: t, roughness: .95 }));
+    paper.position.set(PC[0], PC[1], 0); paper.receiveShadow = true; scene.add(paper);
   }
   const st = { W, H, S, renderer, scene, camera, sun, post, paperCol, ui: uiC.getContext('2d'), texts: [],
     blur(vx, vy, zoom) { mblur.uniforms.vel.value.set(vx, vy); mblur.uniforms.zoom.value = zoom; mblur.enabled = Math.hypot(vx, vy) > .0015 || Math.abs(zoom) > .002; },
@@ -200,6 +201,6 @@ export function caption(st, txt, t0, t, o = {}) {           // 屏幕底部手�
   u.save(); u.globalAlpha = out; u.font = `${size * S}px Hand`; u.textAlign = 'center';
   const w = u.measureText(txt).width, k = clamp((t - t0) / (.2 + .017 * txt.length));
   u.beginPath(); u.rect(st.W / 2 - w / 2 - 10 * S, y - size * 1.1 * S, (w + 20 * S) * k, size * 1.6 * S); u.clip();
-  u.lineJoin = 'round'; u.lineWidth = 14 * S; u.strokeStyle = 'rgba(248,246,241,.9)'; u.strokeText(txt, st.W / 2, y);
+  u.lineJoin = 'round'; u.lineWidth = 20 * S; u.strokeStyle = 'rgba(248,246,241,.95)'; u.shadowColor = 'rgba(248,246,241,.95)'; u.shadowBlur = 18 * S; u.strokeText(txt, st.W / 2, y); u.shadowBlur = 0;
   u.fillStyle = INK; u.globalAlpha = .86 * out; u.fillText(txt, st.W / 2, y); u.restore();
 }

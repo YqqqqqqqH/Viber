@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>duet v2 · plan A preview</title>
+<style>html, body { margin: 0; background: #000; overflow: hidden }</style>
+<script type="importmap">
+{ "imports": { "three": "/node_modules/three/build/three.module.js", "three/addons/": "/node_modules/three/examples/jsm/" } }
+</script>
+</head>
+<body>
+<script type="module">
+// v2 方案 A《The Ride》预览：你的黑线和 Claude 的陶土线是一条过山车轨道的两根轨。轨道的走向就是 Duet 图标那一笔放大 9 倍；
+// 两个圈立起来是过山车的两个大回环，沿途每一站是一件事。最后轨道躺平，镜头升到高空：一整天原来画的是 Duet 图标。
+// t 0–1：坐在轨道上看前面立起来的第二个回环；1–2：躺下的途中；2–3：高空看全貌（陶土色在下面晕开）
+import { stage, Line, X, Y, THREE, caption } from './ink3d.js';
+import { clamp, lerp, seg, eio, mulberry } from '/core/lib.js';
+
+const st = await stage({ fonts: [['Hand', 'fonts/Caveat-600.woff'], ['Inter', 'fonts/Inter-var.woff', { weight: '100 900' }]], sky: '#F0EADE', fog: '#F0EADE', fogNear: 120, fogFar: 260 });
+const TERRA = '#D97757', CLINE = '#CC6644';
+st.camera.far = 400; st.camera.updateProjectionMatrix();   // 高空全景离纸 100 多个单位
+const D2R = Math.PI / 180;
+
+// ---------- 轨道走向 = 官方图标那一笔的中心线 × 9 ----------
+const RAW = [[628, 625], [660, 640], [700, 650], [740, 640], [775, 625], [800, 612], [830, 595], [855, 560], [875, 520], [882, 480], [865, 450], [835, 445], [810, 465], [797, 500], [797, 545], [808, 580], [830, 605], [870, 625], [910, 640], [950, 648], [990, 640], [1015, 628], [1040, 610], [1062, 580], [1085, 540], [1095, 500], [1085, 460], [1060, 440], [1030, 440], [1000, 460], [980, 500], [972, 545], [982, 585], [1010, 615], [1045, 640], [1090, 655], [1140, 658], [1190, 650], [1230, 630], [1265, 600], [1290, 570], [1305, 553]]
+  .map(([x, y]) => [(x - 420) * 1300 / 1080, y * 1300 / 1080]);
+function catmull(P, per) { const o = []; for (let i = 0; i < P.length - 1; i++) { const p0 = P[Math.max(0, i - 1)], p1 = P[i], p2 = P[i + 1], p3 = P[Math.min(P.length - 1, i + 2)]; for (let k = i ? 1 : 0; k <= per; k++) { const t = k / per, t2 = t * t, t3 = t2 * t; o.push([0, 1].map(j => .5 * (2 * p1[j] + (-p0[j] + p2[j]) * t + (2 * p0[j] - 5 * p1[j] + 4 * p2[j] - p3[j]) * t2 + (-p0[j] + 3 * p1[j] - 3 * p2[j] + p3[j]) * t3))); } } return o; }
+function resample(P, n) { const L = [0]; for (let i = 1; i < P.length; i++) L.push(L[i - 1] + Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1])); const o = []; let j = 0; for (let i = 0; i <= n; i++) { const s = L[L.length - 1] * i / n; while (j < L.length - 2 && L[j + 1] < s) j++; const k = (s - L[j]) / Math.max(1e-6, L[j + 1] - L[j]); o.push([lerp(P[j][0], P[j + 1][0], k), lerp(P[j][1], P[j + 1][1], k)]); } return o; }
+const F = 9, G = [5200, 1800];
+const SV = resample(catmull(RAW, 14), 1600);                       // SVG 坐标
+const toD = ([x, y]) => [G[0] + (x - 650) * F, G[1] + (y - 650) * F];
+// 两个回环：在交叉点那条水平线以上、落在圈的 x 范围内的点立起来
+const LOOPS = [{ x0: 440, x1: 572, yc: 724 }, { x0: 650, x1: 825, yc: 742 }];
+function standOf(p) { for (const L of LOOPS) if (p[0] > L.x0 && p[0] < L.x1 && p[1] < L.yc) return (L.yc - p[1]) * F / 100 * .38; return 0; }
+function centre(i, up) { const p = SV[i], d = toD(p), z = standOf(p) * up, yc = LOOPS.find(L => p[0] > L.x0 && p[0] < L.x1 && p[1] < L.yc)?.yc; return yc !== undefined ? [d[0], lerp(d[1], toD([p[0], yc])[1], up), z] : [d[0], d[1], 0]; }
+// 轨距：平的地方沿纸面法线分开，立起来的地方沿 Y 轴（垂直于回环所在的竖面）分开
+const GAUGE = 34;
+function rails(up) {
+  const C = SV.map((_, i) => centre(i, up)), A = [], B = [], T = [];
+  for (let i = 0; i < C.length; i++) {
+    const a = C[Math.max(0, i - 1)], b = C[Math.min(C.length - 1, i + 1)], tx = b[0] - a[0], ty = b[1] - a[1], l = Math.hypot(tx, ty) || 1, s = clamp(C[i][2] / .4);
+    let nx = -ty / l * (1 - s), ny = tx / l * (1 - s) + s; const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
+    A.push([C[i][0] + nx * GAUGE, C[i][1] + ny * GAUGE, C[i][2]]); B.push([C[i][0] - nx * GAUGE, C[i][1] - ny * GAUGE, C[i][2]]);
+    if (i % 14 === 7) T.push([C[i][0] + nx * GAUGE, C[i][1] + ny * GAUGE, C[i][2]], [C[i][0] - nx * GAUGE, C[i][1] - ny * GAUGE, C[i][2]]);
+  }
+  return { A, B, T };
+}
+const YOU = new Line(st, { hw: .07 }), CL = new Line(st, { hw: .06, ink: CLINE }), TIE = new Line(st, { hw: .022, ink: '#9b8f84' });
+const R0 = rails(1);
+YOU.piece(R0.A.map((p, i) => [...p, i]), -3, -2); CL.piece(R0.B.map((p, i) => [...p, i]), -3, -2); TIE.piece(R0.T.map((p, i) => [...p, i]), -3, -2);
+const upAt = t => 1 - eio(seg(t, 1.0, 2.0));
+let lastUp = -1, RT = R0;
+const dynA = (i, p, t) => { const up = upAt(t); if (up !== lastUp) { RT = rails(up); lastUp = up; } return RT.A[p.m]; };
+YOU.dyn = dynA; CL.dyn = (i, p, t) => { dynA(i, p, t); return RT.B[p.m]; }; TIE.dyn = (i, p, t) => { dynA(i, p, t); return RT.T[p.m]; };
+const fat = (i, p, t) => lerp(1, 20, eio(seg(t, 1.9, 2.6)));   // 躺平以后两根轨加粗、并成图标那一笔
+YOU.wfn = fat; CL.wfn = fat;
+YOU.build(); CL.build(); TIE.build();
+
+// ---------- 沿途的站：画在纸上的小画（贴图板），每一站是大图里的一块 ----------
+const APPS = [['gmail', '#EA4335'], ['googlecalendar', '#4285F4'], ['googledocs', '#4285F4'], ['github', '#181717'], ['slack', '#4A154B'], ['stripe', '#635BFF'], ['shopify', '#7AB55C']];
+const GLY = {}; for (const [id] of APPS) GLY[id] = new Path2D((await (await fetch(`assets/apps/${id}.svg`)).text()).match(/<path d="([^"]+)"/)[1]);
+function plate(cx, cy, w, h, draw, z = .003) {
+  const cv = document.createElement('canvas'); cv.width = Math.round(w); cv.height = Math.round(h); const g = cv.getContext('2d'); draw(g, w, h);
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w / 100, h / 100), new THREE.MeshStandardMaterial({ map: tex, transparent: true, roughness: .9, depthWrite: false }));
+  m.position.set(X(cx), Y(cy), z); m.renderOrder = 6; m.receiveShadow = true; st.scene.add(m); return m;
+}
+const INK = '#1D1A17';
+const token = (g, id, col, x, y, r) => { g.fillStyle = '#fff'; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); g.strokeStyle = col; g.lineWidth = r * .1; g.stroke(); g.save(); g.translate(x - r * .55, y - r * .55); g.scale(r * 1.1 / 24, r * 1.1 / 24); g.fillStyle = col; g.fill(GLY[id]); g.restore(); };
+const ink = (g, w = 7) => { g.strokeStyle = INK; g.lineWidth = w; g.lineCap = g.lineJoin = 'round'; };
+const hand = (g, s, x, y, size, col = INK) => { g.font = `${size}px Hand`; g.fillStyle = col; g.fillText(s, x, y); };
+const s0 = toD(SV[0]);
+// ① 起点：一堆 app 在抢你
+plate(s0[0] - 380, s0[1] - 60, 760, 640, (g, w, h) => { const r = mulberry(3); APPS.forEach(([id, col], k) => { const x = 120 + (k % 4) * 170 + r() * 40, y = 140 + Math.floor(k / 4) * 220 + r() * 50; token(g, id, col, x, y, 70); g.fillStyle = '#E5484D'; g.beginPath(); g.arc(x + 52, y - 52, 26, 0, 7); g.fill(); g.fillStyle = '#fff'; g.font = '700 30px Inter'; g.textAlign = 'center'; g.fillText(String(3 + k * 7), x + 52, y - 41); g.textAlign = 'left'; }); hand(g, 'Every app wants you', 60, 610, 54); });
+// ② 第一个回环里：晨报
+{ const c = toD([506, 640]); plate(c[0], c[1], 620, 760, (g, w, h) => { g.fillStyle = 'rgba(251,227,207,.8)'; g.beginPath(); g.roundRect(10, 10, w - 20, h - 20, 40); g.fill(); ink(g); g.stroke(); hand(g, 'Morning brief', 50, 110, 78); g.strokeStyle = CLINE; g.lineWidth = 7; g.beginPath(); g.moveTo(10, 150); g.lineTo(w - 10, 150); g.stroke(); [['gmail', '#EA4335', 'Dana: yes on Friday?'], ['stripe', '#635BFF', 'Invoice #2041 overdue'], ['googledocs', '#4285F4', 'Launch doc edits']].forEach(([id, col, s], k) => { token(g, id, col, 90, 260 + k * 150, 44); hand(g, s, 150, 276 + k * 150, 50); }); }); }
+// ③ 两圈中间的谷底：一周
+{ const c = toD([612, 830]); plate(c[0], c[1], 760, 300, (g, w, h) => { ink(g); for (let i = 0; i < 7; i++) { if (i === 3) { g.fillStyle = 'rgba(66,133,244,.35)'; g.fillRect(40 + i * 96, 80, 96, 130); } g.strokeRect(40 + i * 96, 80, 96, 130); hand(g, 'MTWTFSS'[i], 72 + i * 96, 66, 44, '#6b6157'); } token(g, 'googlecalendar', '#4285F4', w - 20, 40, 34); hand(g, 'Thu 2:00 · Dana', 300, 270, 50); }); }
+// ④ 第二个回环里：dashboard
+{ const c = toD([735, 640]); plate(c[0], c[1], 700, 640, (g, w, h) => { const H = [.35, .55, .45, .8, .62, .95]; const C = ['#A9C99A', '#EED493', '#9CC3EC', '#4285F4', '#E9A486', '#A9C99A']; H.forEach((v, i) => { g.fillStyle = C[i] + 'B0'; g.fillRect(70 + i * 100, 520 - v * 420, 70, v * 420); ink(g, 6); g.strokeRect(70 + i * 100, 520 - v * 420, 70, v * 420); }); ink(g); g.beginPath(); g.moveTo(40, 520); g.lineTo(w - 30, 520); g.stroke(); hand(g, 'Dashboards', 210, 600, 60); }); }
+// ⑤ 第二个回环的顶上：批准卡（整趟车停在这里）
+{ const c = toD([735, 420]); plate(c[0], c[1], 820, 470, (g, w, h) => { g.fillStyle = 'rgba(255,255,255,.85)'; g.beginPath(); g.roundRect(10, 10, w - 20, h - 20, 44); g.fill(); g.strokeStyle = CLINE; g.lineWidth = 8; g.stroke(); token(g, 'gmail', '#EA4335', 80, 80, 40); hand(g, 'Claude Duet', 140, 96, 44, '#6b6157'); hand(g, 'Reply to Dana?', 50, 220, 96); g.fillStyle = TERRA; g.beginPath(); g.roundRect(50, 300, 280, 90, 45); g.fill(); hand(g, '✓ Approve', 90, 362, 56, '#fff'); }); }
+// ⑥ 出口：原型
+{ const c = toD([1060, 840]); plate(c[0], c[1], 620, 420, (g, w, h) => { ink(g); g.beginPath(); g.roundRect(20, 20, w - 40, h - 40, 28); g.stroke(); g.fillStyle = 'rgba(238,212,147,.7)'; g.fillRect(24, 24, w - 48, 60); g.beginPath(); g.moveTo(20, 86); g.lineTo(w - 20, 86); g.stroke(); g.fillStyle = 'rgba(156,195,236,.7)'; g.fillRect(60, 120, 220, 220); g.strokeRect(60, 120, 220, 220); [140, 200, 260].forEach(y => { g.beginPath(); g.moveTo(320, y); g.lineTo(w - 70, y); g.stroke(); }); token(g, 'github', '#181717', w - 70, 54, 30); }); }
+// 陶土色：图标的色块，放大 9 倍，在全景时晕开
+const svg = await (await fetch('assets/claude-duet-icon.svg')).text();
+const BLOB = new Path2D([...svg.matchAll(/<path d="([^"]+)"/g)][1][1]);
+const bloomCv = document.createElement('canvas'); bloomCv.width = bloomCv.height = 1300; const bg = bloomCv.getContext('2d');
+const bloomTex = new THREE.CanvasTexture(bloomCv); bloomTex.colorSpace = THREE.SRGBColorSpace;
+const bloom = new THREE.Mesh(new THREE.PlaneGeometry(1300 * F / 100, 1300 * F / 100), new THREE.MeshStandardMaterial({ map: bloomTex, transparent: true, roughness: .95, depthWrite: false }));
+bloom.position.set(X(G[0]), Y(G[1]), .001); bloom.renderOrder = 4; st.scene.add(bloom);
+function drawBloom(k) { bg.clearRect(0, 0, 1300, 1300); if (k <= 0) { bloom.visible = false; return; } bloom.visible = true; bg.save(); bg.beginPath(); for (let i = 0; i <= 120; i++) { const a = i / 120 * Math.PI * 2, r = 600 * k * (1 + .05 * Math.sin(a * 5)); bg.lineTo(660 + Math.cos(a) * r, 650 + Math.sin(a) * r); } bg.clip(); bg.globalAlpha = .85; bg.fillStyle = TERRA; bg.fill(BLOB); bg.restore(); bloomTex.needsUpdate = true; }
+
+// ---------- 镜头 ----------
+const V = new THREE.Vector3();
+function camera(t) {
+  const c = st.camera;
+  if (t < 1) {                                                    // 坐在谷底的轨道上，看前面立起来的第二个回环
+    const q = toD([700, 742]);                                    // 站在轨道侧面低处，看两个立起来的回环
+    c.position.set(X(q[0]) - 6, Y(q[1]) - 17, 2.2); c.lookAt(X(q[0]) - 3, Y(q[1]), 4.2);
+  } else {
+    const k = eio(seg(t, 1, 2.6)), cen = toD([660, 610]), d = lerp(30, 104, k), el = lerp(40, 88, k) * D2R, az = -90 * D2R;
+    c.position.set(X(cen[0]) + d * Math.cos(el) * Math.cos(az), Y(cen[1]) + d * Math.cos(el) * Math.sin(az), d * Math.sin(el)); c.lookAt(X(cen[0]), Y(cen[1]), 0);
+  }
+  c.updateMatrixWorld(true);
+  st.sun.position.set(c.position.x - 6, c.position.y + 10, 30); st.sun.target.position.set(X(G[0]), Y(G[1]), 0);
+  st.sun.shadow.camera.left = st.sun.shadow.camera.bottom = -45; st.sun.shadow.camera.right = st.sun.shadow.camera.top = 45; st.sun.shadow.camera.far = 120; st.sun.shadow.camera.updateProjectionMatrix();
+  st.post.dof.focus = t < 1 ? 17 : lerp(30, 104, eio(seg(t, 1, 2.6))); st.post.dof.aper = t < 1 ? 50 : 8;
+}
+window.DUR = 3; window.EV = []; window.TEXTS = () => [];
+window.render = t => {
+  YOU.update(t); CL.update(t); TIE.update(t); drawBloom(eio(seg(t, 2.0, 2.9)));
+  camera(t); st.draw(t);
+  if (t < 1) caption(st, 'It asks before it acts.', -1, t);
+  else if (t > 2) caption(st, 'Your whole day was one line.', -1, t);
+};
+await document.fonts.ready;
+window.render(0);
+window.READY = true;
+</script>
+</body>
+</html>
