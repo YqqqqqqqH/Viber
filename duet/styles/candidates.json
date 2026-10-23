@@ -1,0 +1,23 @@
+{
+  "moment": "消息风暴 → Duet 挑出 Dana 那条 → 批准卡 → 按 Approve → Sent（It asks before it acts.）",
+  "candidates": [
+    {"dir": "1-dark-keynote", "id": "lemo/dark-keynote", "name": "暗色科技发布",
+     "why": "界面本身当主角：生成式消息风暴→冻结→光扫亮起，最像发布会，干净利落",
+     "risk": "最常见的科技片样子，辨识度要靠镜头和节奏撑", "key": 2.8},
+    {"dir": "2-swiss", "id": "lemo/swiss-motion", "name": "瑞士动态排版",
+     "why": "网格、刀切、唯一的橙色例外：秩序感最强，张力来自「一条打破网格」",
+     "risk": "没有界面质感，产品像什么要靠字讲", "key": 2.8},
+    {"dir": "3-flat-2026", "id": "huashu/16_2026", "name": "当代扁平插画",
+     "why": "有一个真人（店主）在表演：紧张→松一口气，最有人情味",
+     "risk": "最不「紧绷」；人物动作多了制作量大", "key": 2.8},
+    {"dir": "4-kinetic", "id": "grammar/y5_kinetic_type", "name": "动态文字",
+     "why": "字踩拍砸进来、穿越放大换屏，最有冲劲和节奏感",
+     "risk": "整片都是字会累，没声音时少了鼓点支撑", "key": 2.8},
+    {"dir": "5-three-3d", "id": "house/three-3d", "name": "Three.js 3D",
+     "why": "卡片漩涡、景深、翻面揭晓：空间感和高级感最强",
+     "risk": "渲染最慢；白卡配米色底对比偏弱", "key": 2.8},
+    {"dir": "6-one-line", "id": "lemo/one-line", "name": "一笔画",
+     "why": "一根线从乱麻抽成一张卡：「乱→清」的比喻最直接，最干净",
+     "risk": "动感靠笔速，30–60 秒能否一直保持张力", "key": 2.8}
+  ]
+}

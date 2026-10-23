@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>duet · dark keynote</title>
+<style>html, body { margin: 0; background: #000; overflow: hidden } canvas { display: block }</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script type="module">
+// 样片 ① lemo/dark-keynote：消息风暴（生成式堆积）→ 冻结 → 选中的那条展开成批准卡 → 光扫亮起 → 按 Approve → Sent
+import { clamp, lerp, seg, eio, eo, ei, back, mulberry, vnoise, track } from '/core/lib.js';
+
+const c = document.getElementById('c'), g = c.getContext('2d');
+const W = c.width = innerWidth, H = c.height = innerHeight, S = W / 1920;
+await new FontFace('Inter', 'url(fonts/Inter-var.woff)', { weight: '100 900' }).load().then(f => document.fonts.add(f));
+
+const ACC = '#F0875A', ACC_RGB = '240,135,90', BAD = '#FF4D57';
+const FREEZE = 1.5;
+const rr = (x, y, w, h, r) => { g.beginPath(); g.roundRect(x, y, w, h, r); };
+
+// ---------- 图标（自己画的线性图标，不用任何 app 的 logo） ----------
+function icon(kind, x, y, s, col) {
+  g.save(); g.translate(x, y); g.scale(s, s); g.strokeStyle = col; g.lineWidth = 2; g.lineJoin = g.lineCap = 'round';
+  g.beginPath();
+  if (kind === 'mail') { g.roundRect(-10, -7, 20, 14, 2); g.moveTo(-10, -6); g.lineTo(0, 1); g.lineTo(10, -6); }
+  if (kind === 'chat') { g.roundRect(-10, -8, 20, 13, 4); g.moveTo(-4, 5); g.lineTo(-7, 10); g.lineTo(1, 5); }
+  if (kind === 'cal') { g.roundRect(-9, -7, 18, 16, 2); g.moveTo(-9, -2); g.lineTo(9, -2); g.moveTo(-4, -10); g.lineTo(-4, -5); g.moveTo(4, -10); g.lineTo(4, -5); }
+  if (kind === 'doc') { g.moveTo(-7, -10); g.lineTo(4, -10); g.lineTo(8, -6); g.lineTo(8, 10); g.lineTo(-7, 10); g.closePath(); g.moveTo(-3, -2); g.lineTo(4, -2); g.moveTo(-3, 3); g.lineTo(4, 3); }
+  if (kind === 'box') { g.moveTo(-9, -4); g.lineTo(0, -9); g.lineTo(9, -4); g.lineTo(9, 6); g.lineTo(0, 10); g.lineTo(-9, 6); g.closePath(); g.moveTo(-9, -4); g.lineTo(0, 1); g.lineTo(9, -4); g.moveTo(0, 1); g.lineTo(0, 10); }
+  if (kind === 'pen') { g.moveTo(-8, 8); g.lineTo(-6, 2); g.lineTo(5, -9); g.lineTo(9, -5); g.lineTo(-2, 6); g.closePath(); g.moveTo(-10, 11); g.lineTo(8, 11); }
+  if (kind === 'card') { g.roundRect(-11, -7, 22, 15, 2); g.moveTo(-11, -2); g.lineTo(11, -2); g.moveTo(-6, 4); g.lineTo(-1, 4); }
+  if (kind === 'user') { g.arc(0, -4, 4.5, 0, 7); g.moveTo(-8, 10); g.quadraticCurveTo(-8, 2, 0, 2); g.quadraticCurveTo(8, 2, 8, 10); }
+  g.stroke(); g.restore();
+}
+
+// ---------- 风暴里的通知 ----------
+const LINES = [
+  ['doc', 'Invoice #2041 is overdue', 'Billing · 2m'], ['card', 'Payroll runs tomorrow', 'Payroll · 1h'],
+  ['box', 'Oat milk: 2 cases left', 'Inventory · now'], ['cal', 'Meeting moved to 4:00', 'Calendar · 5m'],
+  ['pen', 'Contract ready to sign', 'Signing · 12m'], ['chat', '14 unread in #kitchen', 'Team chat · now'],
+  ['mail', 'Supplier price change', 'Mail · 8m'], ['user', 'Shift swap request', 'Staff · 3m'],
+  ['doc', 'Quarterly tax reminder', 'Accounting · 1d'], ['mail', 'Refund request #883', 'Store · 6m'],
+  ['cal', 'Conflict on Thursday', 'Calendar · now'], ['box', 'Delivery delayed', 'Shipping · 20m'],
+  ['user', '3 new applicants', 'Hiring · 1h'], ['mail', 'Re: catering quote', 'Mail · 4m'],
+  ['chat', 'Can someone cover Sat?', 'Team chat · 1m'], ['card', 'Card ending 4417 charged', 'Bank · 9m'],
+];
+const CHOSEN = ['chat', 'Dana: Can you confirm Friday?', 'Messages · now'];
+const rnd = mulberry(7);
+const N = 36, notes = [];
+const slots = [];
+for (let r = 0; r < 9; r++) for (let k = 0; k < 4; k++) slots.push([300 + k * 440, 105 + r * 98]);
+for (let i = slots.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [slots[i], slots[j]] = [slots[j], slots[i]]; }
+const CH = 17;                                                    // 被选中的那条第 17 个出现（约 0.9 s）
+const chosenSlot = slots.findIndex(s => s[0] === 740 && s[1] === 399); [slots[CH], slots[chosenSlot]] = [slots[chosenSlot], slots[CH]];
+for (let i = 0; i < N; i++) {
+  const [x, y] = slots[i], isC = i === CH;
+  notes.push({
+    x: x + (isC ? 0 : (rnd() - .5) * 60), y: y + (isC ? 0 : (rnd() - .5) * 26),
+    rot: isC ? 0 : (rnd() - .5) * .07, sc: isC ? 1 : .9 + rnd() * .16,
+    t0: .05 + 1.38 * Math.pow(i / N, .62),
+    line: isC ? CHOSEN : LINES[Math.floor(rnd() * LINES.length)], badge: !isC && rnd() < .45 ? String(1 + Math.floor(rnd() * 14)) : '', isC,
+  });
+}
+const cN = notes[CH];
+// 选中的那条离各卡的距离，决定收起的先后
+const dmax = Math.max(...notes.map(n => Math.hypot(n.x - cN.x, n.y - cN.y)));
+notes.forEach(n => n.off = 1.6 + .32 * Math.hypot(n.x - cN.x, n.y - cN.y) / dmax);
+
+// ---------- 卡片几何 ----------
+const NW = 400, NH = 72;
+const CARD = { x: 580, y: 250, w: 760, h: 420 };
+const FLY0 = 1.58, FLY1 = 2.16;
+const APPROVE = { x: CARD.x + 48, y: CARD.y + CARD.h - 48 - 66, w: 214, h: 66 };
+const EDIT = { x: APPROVE.x + APPROVE.w + 16, y: APPROVE.y, w: 132, h: 66 };
+const PRESS = 2.95;
+
+const cam = track([[0, [960, 540, 1]], [FREEZE, [960, 540, 1.035]], [1.78, [cN.x - 40, cN.y + 10, 1.13]], [2.45, [960, 482, 1.24]], [4, [960, 478, 1.28]]]);
+
+function bg() {
+  const gr = g.createRadialGradient(960, 120, 0, 960, 120, 1300);
+  gr.addColorStop(0, '#16181e'); gr.addColorStop(1, '#08090b');
+  g.fillStyle = gr; g.fillRect(0, 0, 1920, 1080);
+  const gl = g.createRadialGradient(1500, 820, 0, 1500, 820, 900);
+  gl.addColorStop(0, 'rgba(110,140,255,.07)'); gl.addColorStop(1, 'rgba(110,140,255,0)');
+  g.fillStyle = gl; g.fillRect(0, 0, 1920, 1080);
+}
+function grid() {   // 世界坐标里的发丝网格，只随镜头动
+  for (let i = -20; i <= 60; i++) {
+    const a = i % 4 === 0 ? .06 : .03; g.fillStyle = `rgba(255,255,255,${a})`;
+    g.fillRect(i * 48, -600, 1, 2400); g.fillRect(-600, i * 48, 3200, 1);
+  }
+}
+function vignette() {
+  const v = g.createRadialGradient(960, 540, 420, 960, 540, 1150);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,.55)');
+  g.fillStyle = v; g.fillRect(0, 0, 1920, 1080);
+}
+
+function surface(x, y, w, h, r, fill, lit) {
+  g.save(); g.shadowColor = 'rgba(0,0,0,.45)'; g.shadowBlur = 30; g.shadowOffsetY = 14;
+  rr(x, y, w, h, r); g.fillStyle = fill; g.fill(); g.restore();
+  rr(x + .5, y + .5, w - 1, h - 1, r); g.strokeStyle = 'rgba(255,255,255,.08)'; g.lineWidth = 1; g.stroke();
+  g.fillStyle = `rgba(255,255,255,${lit})`; g.fillRect(x + r, y + 1, w - 2 * r, 1);
+}
+
+function noteRow(n, x, y, alpha) {   // 通知一行，左上角在 (x,y)，NW×NH
+  g.globalAlpha = alpha;
+  surface(x, y, NW, NH, 16, '#15171c', .07);
+  rr(x + 14, y + 14, 44, 44, 11); g.fillStyle = '#22252c'; g.fill();
+  icon(n.line[0], x + 36, y + 36, 1, '#c9ccd3');
+  if (n.badge) {
+    g.fillStyle = BAD; g.beginPath(); g.arc(x + 56, y + 16, 10, 0, 7); g.fill();
+    g.fillStyle = '#fff'; g.font = '700 12px Inter'; g.textAlign = 'center'; g.fillText(n.badge, x + 56, y + 20.5);
+  }
+  g.textAlign = 'left'; g.fillStyle = '#eceef2'; g.font = '560 21px Inter'; g.fillText(n.line[1], x + 74, y + 33);
+  g.fillStyle = '#7d828d'; g.font = '450 15px Inter'; g.fillText(n.line[2], x + 74, y + 55);
+  g.globalAlpha = 1;
+}
+
+function drawStorm(t) {
+  const tt = Math.min(t, FREEZE), shake = 3.2 * seg(tt, .55, FREEZE);
+  for (let i = 0; i < N; i++) {
+    const n = notes[i]; if (t < n.t0 || n.isC && t >= FLY0) continue;
+    const k = seg(t, n.t0, n.t0 + .24), drop = (1 - back(k, 1.3)) * -26;
+    const jx = (vnoise(tt * 14 + i * 9.1) - .5) * 2 * shake, jy = (vnoise(tt * 13 + i * 5.3 + 40) - .5) * 2 * shake;
+    let sx = 1, sy = 1, a = clamp(k * 5), lift = 0;
+    if (!n.isC && t > n.off) {                                // 收起：先压成一条线（变亮），再横向缩成点
+      const q = seg(t, n.off, n.off + .2);
+      sy = lerp(1, .035, eo(seg(q, 0, .55))); sx = q < .55 ? lerp(1, 1.04, q / .55) : lerp(1.04, 0, ei(seg(q, .55, 1)));
+      lift = Math.sin(Math.PI * q) * .5; if (q >= 1) continue;
+    }
+    const dim = !n.isC && t > FREEZE ? lerp(1, .38, eo(seg(t, FREEZE, FREEZE + .1))) : 1;
+    g.save(); g.translate(n.x + jx, n.y + jy + drop); g.rotate(n.rot * (1 - eio(seg(t, FREEZE, FREEZE + .3)))); g.scale(n.sc * sx * (.94 + .06 * back(k, 1.3)), n.sc * sy);
+    noteRow(n, -NW / 2, -NH / 2, a * dim);
+    if (lift > 0) { g.globalAlpha = lift; rr(-NW / 2, -NH / 2, NW, NH, 16); g.fillStyle = 'rgba(220,230,255,.9)'; g.fill(); g.globalAlpha = 1; }
+    if (n.isC && t > FREEZE) {                                 // 冻结那一刻，被选中的那条亮起强调色描边
+      const e = eo(seg(t, FREEZE, FREEZE + .08));
+      g.save(); g.shadowColor = `rgba(${ACC_RGB},.8)`; g.shadowBlur = 26 * e; rr(-NW / 2, -NH / 2, NW, NH, 16);
+      g.strokeStyle = `rgba(${ACC_RGB},${e})`; g.lineWidth = 2; g.stroke(); g.restore();
+    }
+    g.restore();
+  }
+}
+
+function drawCard(t) {
+  if (t < FLY0) return;
+  const k = seg(t, FLY0, FLY1), m = back(k, 1.25), p = eio(k);
+  // 弧线飞到中间，同时从一行展开成整张卡
+  const sx0 = cN.x - NW / 2, sy0 = cN.y - NH / 2;
+  const bx = lerp(sx0, CARD.x, m), by = lerp(sy0, CARD.y, m) - Math.sin(Math.PI * p) * 40;
+  const w = lerp(NW, CARD.w, m), h = lerp(NH, CARD.h, m);
+  g.save(); g.shadowColor = `rgba(${ACC_RGB},.35)`; g.shadowBlur = 60; g.shadowOffsetY = 0;
+  rr(bx, by, w, h, 18 + 10 * p); g.fillStyle = '#14161b'; g.fill(); g.restore();
+  surface(bx, by, w, h, 18 + 10 * p, '#14161b', .09);
+  const glow = .55 + .45 * Math.cos(Math.min(t - FLY0, 1.2) * 2.6) * (1 - seg(t, 2.6, 3.4));
+  rr(bx + .5, by + .5, w - 1, h - 1, 18 + 10 * p); g.strokeStyle = `rgba(${ACC_RGB},${.75 * glow})`; g.lineWidth = 1.5; g.stroke();
+
+  g.save(); rr(bx, by, w, h, 18 + 10 * p); g.clip(); g.translate(bx, by);
+  // 原来那一行：图标和 "Dana: …" 滑到卡片顶部当上下文
+  const rowA = 1 - eo(seg(t, FLY0 + .05, FLY0 + .3));
+  noteRowInner(lerp(0, 34, p), lerp(0, 92, p), rowA);
+  // 卡片内容：光带扫过的地方才亮
+  const L = seg(t, 1.98, 2.5), band = lerp(-200, CARD.w + 260, eio(L));
+  const A = clamp((t - 1.95) / .05);
+  if (A > 0) {
+    g.globalAlpha = A;
+    // 顶栏：两个交叠的小圆当 Duet 的标记（自己画的，不是官方标）
+    g.fillStyle = ACC; g.beginPath(); g.arc(46, 46, 9, 0, 7); g.fill();
+    g.strokeStyle = ACC; g.lineWidth = 2; g.beginPath(); g.arc(58, 46, 9, 0, 7); g.stroke();
+    g.font = '600 21px Inter'; g.fillStyle = '#c9ccd3'; g.textAlign = 'left'; g.fillText('Claude Duet', 80, 53);
+    g.font = '600 15px Inter'; g.letterSpacing = '2px'; g.fillStyle = ACC; g.textAlign = 'right';
+    g.fillText(t < PRESS + .12 ? 'NEEDS YOUR OK' : 'APPROVED', CARD.w - 40, 52); g.letterSpacing = '0px';
+    g.fillStyle = 'rgba(255,255,255,.07)'; g.fillRect(34, 80, CARD.w - 68, 1);
+    g.textAlign = 'left';
+    icon('chat', 50, 120, .9, '#8a8f99'); g.font = '480 20px Inter'; g.fillStyle = '#8a8f99'; g.fillText('Dana · “Can you confirm Friday?”', 72, 127);
+    g.font = '640 54px Inter'; g.fillStyle = '#f4f5f7'; g.letterSpacing = '-1.2px'; g.fillText('Reply to Dana?', 46, 205); g.letterSpacing = '0px';
+    rr(46, 232, CARD.w - 92, 66, 12); g.fillStyle = '#1d2026'; g.fill();
+    g.fillStyle = `rgba(${ACC_RGB},.9)`; g.fillRect(46, 244, 3, 42);
+    g.font = '460 25px Inter'; g.fillStyle = '#d5d8de'; g.fillText('“Yes — Friday works. Invoice attached.”', 68, 274);
+    drawButtons(t);
+    g.globalAlpha = 1;
+    // 没被光扫到的部分压暗；光的前沿带一点亮
+    if (L < 1) {
+      const gr = g.createLinearGradient(band - 150, 0, band + 40, 0);
+      gr.addColorStop(0, 'rgba(20,22,27,0)'); gr.addColorStop(1, 'rgba(20,22,27,.97)');
+      g.fillStyle = gr; g.fillRect(0, 0, CARD.w, CARD.h);
+      const gl = g.createLinearGradient(band - 110, 0, band, 0);
+      gl.addColorStop(0, 'rgba(255,255,255,0)'); gl.addColorStop(.75, 'rgba(255,240,230,.14)'); gl.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gl; g.fillRect(0, 0, CARD.w, CARD.h);
+    }
+  }
+  g.restore();
+}
+function noteRowInner(x, y, a) {
+  if (a <= 0) return; g.globalAlpha = a;
+  rr(x + 14, y + 14, 44, 44, 11); g.fillStyle = '#22252c'; g.fill(); icon('chat', x + 36, y + 36, 1, '#c9ccd3');
+  g.textAlign = 'left'; g.fillStyle = '#eceef2'; g.font = '560 21px Inter'; g.fillText(CHOSEN[1], x + 74, y + 33);
+  g.fillStyle = '#7d828d'; g.font = '450 15px Inter'; g.fillText(CHOSEN[2], x + 74, y + 55); g.globalAlpha = 1;
+}
+function drawButtons(t) {
+  const ox = APPROVE.x - CARD.x, oy = APPROVE.y - CARD.y;
+  const press = t < PRESS ? 1 - .05 * ei(seg(t, PRESS - .1, PRESS)) : lerp(.95, 1, back(seg(t, PRESS, PRESS + .22), 2.2));
+  const done = eo(seg(t, PRESS + .08, PRESS + .32));
+  const bw = lerp(APPROVE.w, APPROVE.w + 40, done);
+  g.save(); g.translate(ox + APPROVE.w / 2, oy + APPROVE.h / 2); g.scale(press, press);
+  g.shadowColor = `rgba(${ACC_RGB},${.35 + .4 * done})`; g.shadowBlur = 24 + 30 * done;
+  rr(-bw / 2, -APPROVE.h / 2, bw, APPROVE.h, 14); g.fillStyle = ACC; g.fill(); g.shadowBlur = 0;
+  g.fillStyle = '#1a0f0a'; g.textAlign = 'center'; g.font = '650 25px Inter';
+  if (done < .5) { g.globalAlpha *= 1 - done * 2; g.fillText('Approve', 0, 9); }
+  else {
+    g.globalAlpha *= (done - .5) * 2;
+    g.strokeStyle = '#1a0f0a'; g.lineWidth = 4; g.lineCap = g.lineJoin = 'round';
+    const ck = eo(seg(t, PRESS + .16, PRESS + .4));
+    g.beginPath(); g.moveTo(-60, 0); g.lineTo(-60 + 9 * clamp(ck * 2), 9 * clamp(ck * 2));
+    if (ck > .5) g.lineTo(-51 + 17 * (ck - .5) * 2, 9 - 20 * (ck - .5) * 2); g.stroke();
+    g.fillText('Sent', 12, 9);
+  }
+  g.restore();
+  const ea = 1 - done;
+  if (ea > 0) {
+    g.globalAlpha *= ea;
+    rr(EDIT.x - CARD.x, EDIT.y - CARD.y, EDIT.w, EDIT.h, 14); g.strokeStyle = 'rgba(255,255,255,.18)'; g.lineWidth = 1.5; g.stroke();
+    g.fillStyle = '#c9ccd3'; g.font = '560 24px Inter'; g.textAlign = 'center'; g.fillText('Edit', EDIT.x - CARD.x + EDIT.w / 2, EDIT.y - CARD.y + 42);
+    g.globalAlpha /= ea;
+  }
+  g.textAlign = 'left';
+}
+
+function cursor(t) {
+  if (t < 2.2) return;
+  const k = eio(seg(t, 2.2, 2.82));
+  const tx = APPROVE.x + APPROVE.w * .62, ty = APPROVE.y + APPROVE.h * .58;
+  const x0 = 1430, y0 = 900, cx = 1260, cy = 560;
+  const x = (1 - k) * (1 - k) * x0 + 2 * k * (1 - k) * cx + k * k * tx, y = (1 - k) * (1 - k) * y0 + 2 * k * (1 - k) * cy + k * k * ty;
+  const a = seg(t, 2.2, 2.32) * (1 - seg(t, 3.4, 3.6));
+  const sq = t < PRESS ? 1 - .12 * ei(seg(t, PRESS - .1, PRESS)) : lerp(.88, 1, eo(seg(t, PRESS, PRESS + .15)));
+  if (t > PRESS && t < PRESS + .45) {                         // 按下的那一下：一圈光环
+    const q = seg(t, PRESS, PRESS + .45);
+    g.strokeStyle = `rgba(${ACC_RGB},${.7 * (1 - q)})`; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 14 + 46 * eo(q), 0, 7); g.stroke();
+  }
+  g.save(); g.globalAlpha = a; g.translate(x, y); g.scale(sq, sq);
+  g.beginPath(); g.moveTo(0, 0); g.lineTo(0, 30); g.lineTo(8, 23); g.lineTo(14, 36); g.lineTo(19, 34); g.lineTo(13, 21); g.lineTo(24, 21); g.closePath();
+  g.fillStyle = '#fff'; g.fill(); g.strokeStyle = '#0b0c0f'; g.lineWidth = 2; g.stroke(); g.restore();
+}
+
+const CAP = 'It asks before it acts.', CAP_T0 = .4;
+function capBox() {
+  g.font = '500 38px Inter'; const w = g.measureText(CAP).width + 92;
+  return { x: 960 - w / 2, y: 952, w, h: 70 };
+}
+function caption(t) {
+  if (t < CAP_T0) return;
+  const k = eo(seg(t, CAP_T0, CAP_T0 + .18)), b = capBox();
+  g.save(); g.globalAlpha = k; g.translate(0, (1 - k) * 12);
+  g.shadowColor = 'rgba(0,0,0,.5)'; g.shadowBlur = 30; g.shadowOffsetY = 10;
+  rr(b.x, b.y, b.w, b.h, 35); g.fillStyle = 'rgba(22,24,30,.82)'; g.fill(); g.shadowColor = 'transparent';
+  rr(b.x + .5, b.y + .5, b.w - 1, b.h - 1, 35); g.strokeStyle = 'rgba(255,255,255,.12)'; g.lineWidth = 1; g.stroke();
+  const pulse = .6 + .4 * Math.sin(t * 6);
+  g.fillStyle = `rgba(${ACC_RGB},${pulse})`; g.beginPath(); g.arc(b.x + 38, b.y + 35, 6, 0, 7); g.fill();
+  g.fillStyle = '#eef0f3'; g.font = '500 38px Inter'; g.textAlign = 'left'; g.fillText(CAP, b.x + 60, b.y + 48);
+  g.restore();
+}
+
+window.DUR = 4;
+window.EV = [];
+window.TEXTS = t => {
+  if (t < CAP_T0 + .18) return [];
+  const b = capBox(); return [{ id: 'cap', text: CAP, x0: b.x * S, y0: b.y * S, x1: (b.x + b.w) * S, y1: (b.y + b.h) * S }];
+};
+window.render = t => {
+  g.setTransform(S, 0, 0, S, 0, 0);
+  bg();
+  const [cx, cy, z] = cam(t);
+  const roll = .006 * Math.sin(Math.min(t, FREEZE) * 3.1) * seg(Math.min(t, FREEZE), .5, FREEZE) * (1 - eio(seg(t, FREEZE, FREEZE + .35)));
+  g.save(); g.translate(960, 540); g.rotate(roll); g.scale(z, z); g.translate(-cx, -cy);
+  grid(); drawStorm(t); drawCard(t); cursor(t);
+  g.restore();
+  vignette(); caption(t);
+};
+
+await document.fonts.ready;
+window.render(0);
+window.READY = true;
+</script>
+</body>
+</html>

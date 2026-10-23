@@ -1,0 +1,28 @@
+《Two Lines》Claude Duet 宣传片用到的第三方东西
+
+画法
+- 风格：lemo-opuscar 的 one-line（一笔画）风格卡 + 本项目的 Three.js 3D 做法（house/three-3d），合成在 lib/ink3d.js 里，代码是这支片自己写的。
+- three.js r170（MIT），从 lemo-opuscar 的 node_modules 引用；景深、暗角用 lemo-opuscar 的 core/three/post.js。
+
+字体（都在 fonts/）
+- Caveat：© 2014 The Caveat Project Authors，SIL Open Font License 1.1。手写字幕和纸上的字。
+- Inter：© 2016 The Inter Project Authors，SIL Open Font License 1.1。片尾字标。
+- 许可原文：fonts/OFL.txt。
+
+图标
+- Claude Duet 图标（assets/claude-duet-icon.svg）：Anthropic 的商标和设计，取自 https://claude.com/resources/articles/claude-duet 页面上的 assets.claude.com 文件。用户确认可以在本片里使用。
+- app 字形（assets/apps/*.svg）：Simple Icons 13.21.0（https://simpleicons.org），图标数据以 CC0 1.0 发布；品牌色取自 Simple Icons 的数据文件。
+
+声音
+- 无（用户选择无声）。
+
+工具
+- 渲染：lemo-opuscar 的 core/render（Playwright + FFmpeg）。
+- 验收：huashu-art-motion 的 storyboard_lint.py、film_gate.py，xilo-opus-video 的 analyze_video.py。
+
+资料
+- 片中关于 Claude Duet 的说法（主动帮你盯着各个 app、每天的晨报、排会议和做 dashboard / 原型、发消息付款签字之前先问你、6,000+ connectors、research preview + waitlist）只取自 Anthropic 的发布文章：https://claude.com/resources/articles/claude-duet
+- 片中的 Dana、发票号、周四 2:00 等是示意场景，不是真实数据。Google Docs、Google Calendar、GitHub 没有在文章里被点名为 Duet 的连接器，是用户按自己用的 app 选的。
+
+商标
+- Claude、Claude Duet 是 Anthropic 的商标。Gmail、Google Docs、Google Calendar 是 Google LLC 的商标；GitHub 是 GitHub, Inc. 的商标；Slack 是 Slack Technologies, LLC 的商标；Stripe 是 Stripe, Inc. 的商标；Shopify 是 Shopify Inc. 的商标。本片是独立制作的宣传短片，与以上公司没有关系。

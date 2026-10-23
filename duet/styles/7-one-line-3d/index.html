@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>duet · one line 3d</title>
+<style>html, body { margin: 0; background: #000; overflow: hidden } canvas { display: block; position: absolute; left: 0; top: 0 }</style>
+<script type="importmap">
+{ "imports": { "three": "/node_modules/three/build/three.module.js", "three/addons/": "/node_modules/three/examples/jsm/" } }
+</script>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<canvas id="ui"></canvas>
+<script type="module">
+// 样片 ⑦ 一笔画 × 3D：Three.js 里的一张真纸，墨线有体积。线在纸上画信封、气泡、日历，然后离开纸面在空中缠成一团、越抖越厉害（镜头压低绕过去）
+// → 一切停住 → 笔把那团线一把拉直、平铺回纸上，接着画出卡片和按钮 → 停在按钮旁等 → 按下，橙色的勾（唯一的强调色）
+import * as THREE from 'three';
+import { makePost } from '/core/three/post.js';
+import { clamp, lerp, seg, eio, eo, ss, mulberry, vnoise, track } from '/core/lib.js';
+
+const W = innerWidth, H = innerHeight, S = W / 1920;
+await new FontFace('Hand', 'url(fonts/Caveat-600.woff)').load().then(f => document.fonts.add(f));
+const ui = document.getElementById('ui'); ui.width = W; ui.height = H; const u = ui.getContext('2d');
+
+const PAPER = '#F6F2EA', INK = '#1D1A17', ACC = '#E2622E';
+const FREEZE = 1.5, PULL0 = 1.66, PULL1 = 2.05, PRESS = 2.95;
+const X = x => x / 100, Y = y => -y / 100;                      // 设计像素 → 世界单位（纸在 XY 平面，Z 朝上）
+
+// ---------- 场景 ----------
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('gl'), antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(1); renderer.setSize(W, H, false);
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap;
+renderer.toneMapping = THREE.NeutralToneMapping; renderer.toneMappingExposure = 1.1; renderer.outputColorSpace = THREE.SRGBColorSpace;
+const scene = new THREE.Scene(); scene.background = new THREE.Color(PAPER); scene.fog = new THREE.Fog(PAPER, 16, 34);
+const camera = new THREE.PerspectiveCamera(28, W / H, .05, 80); camera.up.set(0, 0, 1);
+scene.add(new THREE.HemisphereLight('#fffaf2', '#ddd2bf', 1.45));
+const sun = new THREE.DirectionalLight('#fff0dc', 2.3); sun.castShadow = true;
+sun.shadow.mapSize.set(4096, 4096); Object.assign(sun.shadow.camera, { left: -9, right: 9, top: 9, bottom: -9, near: .5, far: 40 });
+sun.shadow.radius = 3; sun.shadow.bias = -.0004; sun.shadow.normalBias = .01;
+scene.add(sun, sun.target);
+const post = makePost(renderer, scene, camera, W, H, { ssaa: 1 });
+post.dof.maxCoc = 12; post.vig.material.uniforms.amt.value = .18;
+
+// 纸
+{
+  const cv = document.createElement('canvas'); cv.width = 2048; cv.height = 1200; const x = cv.getContext('2d'), r = mulberry(9);
+  x.fillStyle = PAPER; x.fillRect(0, 0, 2048, 1200);
+  for (let i = 0; i < 1600; i++) { const v = vnoise(i * .13) - .5; x.fillStyle = `rgba(${v > 0 ? '255,252,244' : '170,150,120'},${Math.abs(v) * .03})`; x.beginPath(); x.arc(r() * 2048, r() * 1200, 20 + r() * 50, 0, 7); x.fill(); }
+  for (let i = 0; i < 900; i++) { x.strokeStyle = `rgba(150,130,100,${.03 + r() * .05})`; x.lineWidth = .6; x.beginPath(); const a = r() * 6.3, px = r() * 2048, py = r() * 1200; x.moveTo(px, py); x.quadraticCurveTo(px + Math.cos(a) * 14 + r() * 6, py + Math.sin(a) * 14, px + Math.cos(a) * 28, py + Math.sin(a) * 28); x.stroke(); }
+  for (let i = 0; i < 9000; i++) { x.fillStyle = `rgba(90,70,40,${.03 + r() * .06})`; x.fillRect(r() * 2048, r() * 1200, 1.2, 1.2); }
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(140 / 34, 100 / 20);   // 纸铺到地平线，压低镜头也看不到纸边
+  const paper = new THREE.Mesh(new THREE.PlaneGeometry(140, 100), new THREE.MeshStandardMaterial({ map: t, roughness: .95 }));
+  paper.position.set(9.6, -5.4, 0); paper.receiveShadow = true; scene.add(paper);
+}
+
+// ---------- 路径：一串带时间的点（设计像素 + 高度 z，单位世界） ----------
+const P = [];
+function piece(pts, t0, t1, o = {}) {
+  const L = [0]; for (let i = 1; i < pts.length; i++) L.push(L[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+  const tot = L[L.length - 1] || 1, warp = o.warp || (u => u);
+  if (P.length && t0 > P[P.length - 1].t + 1e-6) P.push({ ...P[P.length - 1], t: t0, acc: !!o.acc, knot: false });
+  for (let i = P.length ? 1 : 0; i < pts.length; i++) P.push({ x: pts[i][0], y: pts[i][1], z: pts[i][2] || 0, t: t0 + (t1 - t0) * warp(L[i] / tot), acc: !!o.acc, knot: !!o.knot, u: L[i] / tot });
+}
+const last = () => { const p = P[P.length - 1]; return [p.x, p.y]; };
+const lineTo = (a, b, n = 30) => { const o = []; for (let i = 0; i <= n; i++) o.push([lerp(a[0], b[0], i / n), lerp(a[1], b[1], i / n)]); return o; };
+function bez(p0, p1, p2, p3, n = 60) { const o = []; for (let i = 0; i <= n; i++) { const t = i / n, v = 1 - t; o.push([v * v * v * p0[0] + 3 * v * v * t * p1[0] + 3 * v * t * t * p2[0] + t * t * t * p3[0], v * v * v * p0[1] + 3 * v * v * t * p1[1] + 3 * v * t * t * p2[1] + t * t * t * p3[1]]); } return o; }
+function poly(list, n = 20) { let o = []; for (let i = 1; i < list.length; i++) o = o.concat(lineTo(list[i - 1], list[i], n).slice(i > 1 ? 1 : 0)); return o; }
+function rrect(x, y, w, h, r) {
+  const o = [], arc = (cx, cy, a0) => { for (let i = 0; i <= 12; i++) { const a = a0 + i / 12 * Math.PI / 2; o.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]); } };
+  o.push(...lineTo([x + r, y], [x + w - r, y])); arc(x + w - r, y + r, -Math.PI / 2);
+  o.push(...lineTo([x + w, y + r], [x + w, y + h - r])); arc(x + w - r, y + h - r, 0);
+  o.push(...lineTo([x + w - r, y + h], [x + r, y + h])); arc(x + r, y + h - r, Math.PI / 2);
+  o.push(...lineTo([x, y + h - r], [x, y + r])); arc(x + r, y + r, Math.PI);
+  return o;
+}
+const near = (pts, x, y) => pts.reduce((bi, p, i) => Math.hypot(p[0] - x, p[1] - y) < Math.hypot(pts[bi][0] - x, pts[bi][1] - y) ? i : bi, 0);
+const rot = (pts, i) => pts.slice(i).concat(pts.slice(1, i + 1));
+
+piece(poly([[210, 600], [210, 480], [290, 545], [370, 480], [370, 600], [210, 600], [250, 640]]), 0, .38);
+const bub = rrect(430, 340, 170, 110, 26), bi = near(bub, 490, 450);
+piece(bez(last(), [300, 690], [470, 560], bub[bi], 30), .38, .48);
+piece(rot(bub, bi).concat(poly([bub[bi], [466, 494], [462, 450]], 8)), .48, .76);
+piece(bez(last(), [600, 430], [640, 470], [640, 500], 24), .76, .82);
+piece(poly([[640, 500], [800, 500], [800, 640], [640, 640], [640, 500], [640, 540], [800, 540], [760, 540], [760, 480], [760, 540], [680, 540], [680, 480]]), .82, 1.0);
+// 空中的一团：x、y 和平面版一样绕，z 起伏着往上长
+const KN = 1500, knot = [];
+for (let i = 0; i <= KN; i++) {
+  const q = i / KN, th = q * Math.PI * 2 * 9, R = 70 + 190 * Math.sqrt(q);
+  knot.push([560 + R * (Math.sin(th + .3) * .9 + .35 * Math.sin(th * 2.7 + 1.1)), 520 + R * .75 * (Math.cos(th * 1.31) + .3 * Math.cos(th * 3.3 + .5)),
+    ss(q / .1) * (.25 + 1.5 * (.5 + .5 * Math.sin(th * .53 + 1)) * (.55 + .45 * Math.sin(th * .19 + 2)))]);
+}
+piece(bez(last(), [700, 420], [620, 560], knot[0], 20), 1.0, 1.04);
+const K0 = P.length - 1;
+piece(knot, 1.04, FREEZE, { warp: q => Math.pow(q, .62), knot: true });
+const K1 = P.length - 1, KEND = { ...P[K1] };
+const CARD = { x: 1040, y: 230, w: 700, h: 470, r: 44 };
+const PEN_PULL = [[KEND.x, KEND.y], [KEND.x + 160, KEND.y - 260], [CARD.x - 200, CARD.y - 60], [CARD.x + CARD.r, CARD.y]];
+// 拉直的那段时间里不出新墨：线已经在那团里了
+P.push({ x: CARD.x + CARD.r, y: CARD.y, z: 0, t: PULL1, acc: false, knot: false });
+piece(rrect(CARD.x, CARD.y, CARD.w, CARD.h, CARD.r), PULL1, PULL1 + .4, { warp: q => eio(q) * .85 + q * .15 });
+const BTN = { x: 1090, y: 580, w: 250, h: 76 };
+const btn = rrect(BTN.x, BTN.y, BTN.w, BTN.h, 38), bj = near(btn, BTN.x, BTN.y + 38);
+piece(bez(last(), [CARD.x + 30, CARD.y + 160], [CARD.x + 20, BTN.y + 40], btn[bj], 40), 2.45, 2.57);
+piece(rot(btn, bj), 2.57, 2.75);
+piece(bez(last(), [BTN.x + 20, BTN.y + 104], [BTN.x + BTN.w + 20, BTN.y + 104], [BTN.x + BTN.w + 40, BTN.y + 38], 30), 2.75, 2.88);
+const CK0 = last();
+piece(poly([CK0, [CK0[0] + 26, CK0[1] + 26], [CK0[0] + 78, CK0[1] - 36]], 16), PRESS, PRESS + .2, { acc: true });
+piece(bez(last(), [CK0[0] + 150, CK0[1] - 70], [1790, 760], [1880, 880], 50), PRESS + .2, 3.7);
+const T_END = P[P.length - 1].t, NP = P.length;
+
+// 笔压：速度快线细，慢线粗（在静态路径上算一次，前后平滑）
+{
+  const v = P.map((p, i) => { const a = P[Math.max(0, i - 1)], b = P[Math.min(NP - 1, i + 1)]; return Math.hypot(b.x - a.x, b.y - a.y) / Math.max(1e-3, b.t - a.t); });
+  P.forEach((p, i) => { let s = 0, n = 0; for (let j = -4; j <= 4; j++) { const k = i + j; if (k >= 0 && k < NP) { s += .66 + .8 * Math.exp(-v[k] / 300); n++; } } p.pr = s / n; });
+}
+
+// ---------- 墨线网格：每个点一圈 8 个顶点，截面在纸上是扁的、在空中是圆的 ----------
+const RS = 8, HW = .03;
+const pos = new Float32Array(NP * RS * 3), nor = new Float32Array(NP * RS * 3), col = new Float32Array(NP * RS * 3);
+const idx = []; for (let i = 0; i < NP - 1; i++) for (let k = 0; k < RS; k++) { const a = i * RS + k, b = i * RS + (k + 1) % RS, c = a + RS, d = b + RS; idx.push(a, c, b, b, c, d); }
+const geo = new THREE.BufferGeometry();
+geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+geo.setIndex(idx);
+const inkMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .38, metalness: 0 });
+const inkMesh = new THREE.Mesh(geo, inkMat); inkMesh.castShadow = true; inkMesh.receiveShadow = true; inkMesh.frustumCulled = false; scene.add(inkMesh);
+const cInk = new THREE.Color(INK), cAcc = new THREE.Color(ACC);
+P.forEach((p, i) => { const c = p.acc ? cAcc : cInk; for (let k = 0; k < RS; k++) col.set([c.r, c.g, c.b], (i * RS + k) * 3); });
+const capMat = new THREE.MeshStandardMaterial({ color: INK, roughness: .38 });
+const head = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), capMat), tail = head.clone(); head.castShadow = tail.castShadow = true; scene.add(head, tail);
+
+function penPull(t) { const k = eio(seg(t, PULL0, PULL1)); return [lerpB(PEN_PULL, k), KEND.z * (1 - ss(k))]; }   // 拉线时笔的位置（从空中落回纸上）
+function lerpB(c, t) { const v = 1 - t; return [v * v * v * c[0][0] + 3 * v * v * t * c[1][0] + 3 * v * t * t * c[2][0] + t * t * t * c[3][0], v * v * v * c[0][1] + 3 * v * v * t * c[1][1] + 3 * v * t * t * c[2][1] + t * t * t * c[3][1]]; }
+const A0 = P[K0];
+const tmp = [];
+function pointAt(i, t) {                                         // 第 i 个点在第 t 秒的位置 [x, y, z]
+  const p = P[i];
+  if (!p.knot) return [p.x, p.y, p.z];
+  const tt = Math.min(t, FREEZE), amp = seg(tt, 1.05, 1.5), b = eio(seg(t, PULL0, PULL1));
+  let x = p.x + (vnoise(i * .37 + tt * 16) - .5) * 14 * amp * (1 - b), y = p.y + (vnoise(i * .37 + tt * 16 + 70) - .5) * 14 * amp * (1 - b), z = p.z + (vnoise(i * .29 + tt * 13 + 140) - .5) * .12 * amp * (1 - b);
+  if (b > 0) { const [pp, pz] = penPull(t); x = lerp(x, lerp(A0.x, pp[0], p.u), b); y = lerp(y, lerp(A0.y, pp[1], p.u), b); z = lerp(z, pz * p.u, b); }
+  return [x, y, z];
+}
+function nibAt(t) {
+  if (t >= FREEZE && t < PULL1) return pointAt(K1, t);         // 拉线时笔尖就是线头
+  let lo = 0, hi = NP - 1; if (t <= P[0].t) return pointAt(0, t); if (t >= P[hi].t) return pointAt(hi, t);
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (P[m].t <= t) lo = m; else hi = m; }
+  const a = pointAt(lo, t), b = pointAt(hi, t), k = (t - P[lo].t) / Math.max(1e-6, P[hi].t - P[lo].t); return [lerp(a[0], b[0], k), lerp(a[1], b[1], k), lerp(a[2], b[2], k)];
+}
+const T = new THREE.Vector3(), UP = new THREE.Vector3(), B = new THREE.Vector3(), Z = new THREE.Vector3(0, 0, 1);
+function buildInk(t) {
+  let n = 0; while (n < NP && P[n].t <= t) n++;
+  const W3 = [];
+  for (let i = 0; i < NP; i++) { const [x, y, z] = pointAt(i, t); W3.push([X(x), Y(y), z]); }
+  for (let i = 0; i < NP; i++) {
+    const a = W3[Math.max(0, i - 1)], b = W3[Math.min(NP - 1, i + 1)];
+    T.set(b[0] - a[0], b[1] - a[1], b[2] - a[2]); if (T.lengthSq() < 1e-12) T.set(1, 0, 0); T.normalize();
+    UP.copy(Z).addScaledVector(T, -T.dot(Z)); if (UP.lengthSq() < 1e-6) UP.set(0, 1, 0); UP.normalize();
+    B.crossVectors(T, UP).normalize();
+    const p = W3[i], w = HW * P[i].pr * (1 + .08 * (vnoise(i * .07) - .5)), h = w * lerp(.22, 1, clamp(p[2] / .12)), zc = p[2] + h;
+    for (let k = 0; k < RS; k++) {
+      const ang = k / RS * Math.PI * 2, cs = Math.cos(ang), sn = Math.sin(ang), j = (i * RS + k) * 3;
+      pos[j] = p[0] + B.x * cs * w + UP.x * sn * h; pos[j + 1] = p[1] + B.y * cs * w + UP.y * sn * h; pos[j + 2] = zc + B.z * cs * w + UP.z * sn * h;
+      const nx = B.x * cs * h + UP.x * sn * w, ny = B.y * cs * h + UP.y * sn * w, nz = B.z * cs * h + UP.z * sn * w, l = Math.hypot(nx, ny, nz) || 1;
+      nor[j] = nx / l; nor[j + 1] = ny / l; nor[j + 2] = nz / l;
+    }
+  }
+  geo.attributes.position.needsUpdate = geo.attributes.normal.needsUpdate = true;
+  geo.setDrawRange(0, Math.max(0, n - 1) * RS * 6);
+  // 两头的圆帽
+  const hp = nibAt(Math.min(t, T_END)), hi = Math.max(0, n - 1), hw = HW * P[hi].pr, hh = hw * lerp(.22, 1, clamp(hp[2] / .12));
+  head.position.set(X(hp[0]), Y(hp[1]), hp[2] + hh); head.scale.set(hw, hw, hh); head.material = P[hi].acc ? accCap : capMat; head.visible = t > 0;
+  const tp = W3[0]; tail.position.set(tp[0], tp[1], HW * P[0].pr * .22); tail.scale.set(HW * P[0].pr, HW * P[0].pr, HW * P[0].pr * .22);
+}
+const accCap = new THREE.MeshStandardMaterial({ color: ACC, roughness: .38 });
+
+// 笔：不画出来，只在笔尖旁边留一片柔和的影子（屏幕层上，按笔尖投到屏幕的位置画）
+function penShadow(t) {
+  const a = 1 - seg(t, T_END, T_END + .4); if (a <= 0) return;
+  const [x, y, z] = nibAt(Math.min(t, T_END)), v = new THREE.Vector3(X(x), Y(y), 0).project(camera);
+  const sx = (v.x + 1) / 2 * W, sy = (1 - v.y) / 2 * H, lift = (z + (t > 2.88 && t < PRESS ? .25 * Math.sin(Math.PI * seg(t, 2.88, PRESS)) : 0)) * 60 * S;
+  u.save(); u.globalAlpha = a; u.filter = `blur(${(12 + lift * .3) * S}px)`; u.fillStyle = 'rgba(60,45,30,.16)';
+  u.beginPath(); u.moveTo(sx + 8 * S + lift, sy + 5 * S + lift * .4); u.lineTo(sx + 260 * S + lift, sy - 170 * S); u.lineTo(sx + 290 * S + lift, sy - 130 * S); u.closePath(); u.fill(); u.restore();
+}
+
+// ---------- 纸上的手写字：每段字一块透明板，按时间从左往右写出来 ----------
+const TXT = [];
+function writing(txt, x, y, size, t0, color = INK, align = 'left') {
+  const sc = 3, m = document.createElement('canvas').getContext('2d'); m.font = `${size}px Hand`;
+  const w = Math.ceil(m.measureText(txt).width + 40), h = Math.ceil(size * 1.6);
+  const cv = document.createElement('canvas'); cv.width = w * sc; cv.height = h * sc; const g = cv.getContext('2d');
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w / 100, h / 100), new THREE.MeshStandardMaterial({ map: tex, transparent: true, roughness: .9, depthWrite: false }));
+  const x0 = align === 'center' ? x - (w - 40) / 2 : x;
+  mesh.position.set(X(x0 - 20 + w / 2), Y(y - size * 1.05 + h / 2), .004); mesh.receiveShadow = true; scene.add(mesh);
+  const dur = .2 + .017 * txt.length;
+  const o = { last: -1, draw(t) {
+    const k = clamp((t - t0) / dur); mesh.visible = k > 0; if (k === o.last) return; o.last = k;
+    g.setTransform(sc, 0, 0, sc, 0, 0); g.clearRect(0, 0, w, h); g.save(); g.beginPath(); g.rect(0, 0, 20 + (w - 20) * k, h); g.clip();
+    g.font = `${size}px Hand`; g.lineJoin = 'round'; g.lineWidth = 10; g.strokeStyle = PAPER; g.strokeText(txt, 20, size * 1.05);
+    g.globalAlpha = .88; g.fillStyle = color; g.fillText(txt, 20, size * 1.05); g.restore(); tex.needsUpdate = true;
+  } };
+  TXT.push(o);
+}
+writing('Claude Duet', CARD.x + 52, CARD.y + 78, 42, 2.18, '#6b6157');
+writing('Reply to Dana?', CARD.x + 48, CARD.y + 178, 100, 2.22);
+writing('“Yes, Friday works. Invoice attached.”', CARD.x + 52, CARD.y + 262, 44, 2.3, '#4a423a');
+writing('Approve', BTN.x + BTN.w / 2, BTN.y + 54, 52, 2.5, INK, 'center');
+writing('sent', CK0[0] + 92, CK0[1] + 14, 58, PRESS + .14);
+
+// ---------- 镜头：构图中心 + 跟笔尖（滞后取平均），距离、仰角、方位角按关键帧连续变 ----------
+const camK = track([
+  [0, [300, 560, 6.2, 58, -100, .8]], [.9, [520, 520, 7.4, 50, -96, .6]], [1.5, [560, 500, 8.6, 27, -66, .25]],
+  [PULL0, [565, 500, 8.3, 26, -64, .2]], [PULL1, [920, 440, 12.4, 48, -82, .15]], [2.6, [1300, 470, 12.8, 60, -90, 0]], [4, [1325, 470, 12.1, 62, -91, 0]]]);
+function placeCam(t) {
+  const [cx, cy, d, el, az, fw] = camK(t);
+  let sx = 0, sy = 0, sz = 0; const n = 10;
+  for (let i = 0; i < n; i++) { const [x, y, z] = nibAt(clamp(t - .5 + .9 * i / (n - 1), 0, T_END)); sx += x; sy += y; sz += z; }
+  const tx = lerp(cx, sx / n, fw), ty = lerp(cy, sy / n, fw), tz = lerp(0, sz / n, fw) * .6;
+  const tgt = new THREE.Vector3(X(tx), Y(ty), tz), e = el * Math.PI / 180, a = az * Math.PI / 180;
+  camera.position.set(tgt.x + d * Math.cos(e) * Math.cos(a), tgt.y + d * Math.cos(e) * Math.sin(a), tgt.z + d * Math.sin(e));
+  camera.lookAt(tgt);
+  sun.position.set(tgt.x - 5, tgt.y + 6, 10); sun.target.position.copy(tgt);
+  const [nx, ny, nz] = nibAt(Math.min(t, T_END)), fd = camera.position.distanceTo(new THREE.Vector3(X(nx), Y(ny), nz));
+  post.dof.focus = lerp(fd, camera.position.distanceTo(tgt), clamp((t - 2.2) / .6)); post.dof.aper = lerp(70, 40, clamp((t - 1.7) / .8));
+}
+
+// ---------- 字幕：屏幕上手写出来 ----------
+const CAP = 'It asks before it acts.', CAP_T0 = .4;
+function caption(t) {
+  if (t < CAP_T0) return;
+  u.save(); u.font = `${62 * S}px Hand`; u.textAlign = 'center';
+  const w = u.measureText(CAP).width, k = clamp((t - CAP_T0) / (.2 + .017 * CAP.length));
+  u.beginPath(); u.rect(W / 2 - w / 2 - 10 * S, 940 * S, (w + 20 * S) * k, 100 * S); u.clip();
+  u.lineJoin = 'round'; u.lineWidth = 12 * S; u.strokeStyle = 'rgba(243,238,227,.9)'; u.strokeText(CAP, W / 2, 1012 * S);
+  u.fillStyle = INK; u.globalAlpha = .86; u.fillText(CAP, W / 2, 1012 * S); u.restore();
+}
+
+window.DUR = 4; window.EV = [];
+window.TEXTS = t => { if (t < CAP_T0 + .6) return []; u.font = `${62 * S}px Hand`; const w = u.measureText(CAP).width; return [{ id: 'cap', text: CAP, x0: (W - w) / 2, y0: 960 * S, x1: (W + w) / 2, y1: 1030 * S }]; };
+window.render = t => {
+  buildInk(t); placeCam(t); TXT.forEach(o => o.draw(t));
+  post.composer.render();
+  u.clearRect(0, 0, W, H); penShadow(t); caption(t);
+};
+
+await document.fonts.ready;
+window.render(0);
+window.READY = true;
+</script>
+</body>
+</html>

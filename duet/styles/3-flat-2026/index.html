@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>duet · flat 2026</title>
+<style>html, body { margin: 0; background: #000; overflow: hidden } canvas { display: block }</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script type="module">
+// 样片 ③ huashu/16_2026 当代扁平插画：咖啡店老板娘在柜台后，手机里冒出的消息泡越来越多（紧张线、皱眉）→
+// Dana 那个泡钻回手机，手机里弹出 Duet 的批准卡，其余的泡啪地散掉 → 拇指按下 → 卡上 Sent，她松一口气
+import { clamp, lerp, seg, eio, eo, back, mulberry } from '/core/lib.js';
+
+const c = document.getElementById('c'), g = c.getContext('2d');
+const W = c.width = innerWidth, H = c.height = innerHeight, S = W / 1920;
+for (const [n, f] of [['Pop6', 'Poppins-600'], ['Pop7', 'Poppins-700'], ['Pop8', 'Poppins-800']])
+  await new FontFace(n, `url(fonts/${f}.woff)`).load().then(x => document.fonts.add(x));
+
+const C = { bg: '#F7EDE2', peach: '#F6BFA6', peachDot: '#E58C6E', lav: '#D9D3F2', lavDot: '#A99BE0', teal: '#2F6A64', tealTop: '#4F8E86', tealDot: '#1F4F4A',
+  skin: '#E6B08F', skinD: '#CF9070', hair: '#2A1D1B', hairL: '#4A3430', shirt: '#F2B544', shirtD: '#D99A2B', apron: '#27355A', apronD: '#1C2745',
+  navy: '#1F2A44', orange: '#F26B3A', white: '#FFFDF8', cheek: '#F08F80', red: '#E8473F', ink: '#3A2A28' };
+const FREEZE = 1.5, PRESS = 2.95;
+const rr = (x, y, w, h, r) => { g.beginPath(); g.roundRect(x, y, w, h, r); };
+const damp = (t, t0, amp, per, dec) => t < t0 ? 0 : amp * Math.sin((t - t0) / per * Math.PI * 2) * Math.exp(-(t - t0) / dec);
+
+// ---------- 颗粒点彩：静态部分一次画进缓存 ----------
+const mk = () => { const o = document.createElement('canvas'); o.width = W; o.height = H; const x = o.getContext('2d'); x.setTransform(S, 0, 0, S, 0, 0); return [o, x]; };
+function stipple(x, path, box, col, dens, seed, size = 2.2) {
+  const r = mulberry(seed); x.fillStyle = col;
+  const [x0, y0, x1, y1] = box, n = Math.round((x1 - x0) * (y1 - y0) / 18);
+  for (let i = 0; i < n; i++) {
+    const px = x0 + r() * (x1 - x0), py = y0 + r() * (y1 - y0);
+    if (r() > dens(px, py)) continue;
+    if (path && !x.isPointInPath(path, px * S, py * S)) continue;
+    x.fillRect(px, py, size, size);
+  }
+}
+const [bgL, b] = mk();
+{
+  b.fillStyle = C.bg; b.fillRect(0, 0, 1920, 1080);
+  // 左上的菜单黑板、吊灯线
+  b.fillStyle = '#34413C'; b.beginPath(); b.roundRect(120, 120, 300, 190, 14); b.fill();
+  b.strokeStyle = 'rgba(255,255,255,.55)'; b.lineWidth = 4; b.lineCap = 'round';
+  [[150, 170, 330], [150, 210, 290], [150, 250, 360], [150, 284, 260]].forEach(([x, y, x2]) => { b.beginPath(); b.moveTo(x, y); b.lineTo(x2, y); b.stroke(); });
+  b.fillStyle = C.orange; b.font = '600 26px Pop6'; b.fillText('MENU', 150, 155);
+  // 身后的大桃色圆，越往下点越密
+  const disc = new Path2D(); disc.arc(640, 470, 330, 0, 7); b.fillStyle = C.peach; b.fill(disc);
+  stipple(b, disc, [310, 140, 970, 800], C.peachDot, (x, y) => .08 + .7 * clamp((y - 330) / 420), 11);
+  // 右边放卡的淡紫块，往右下密
+  const lav = new Path2D(); lav.roundRect(1040, 150, 780, 640, 60); b.fillStyle = C.lav; b.fill(lav);
+  stipple(b, lav, [1040, 150, 1820, 790], C.lavDot, (x, y) => .04 + .5 * clamp((x - 1300) / 500) * clamp((y - 260) / 500 + .2), 12);
+  // 柜台
+  const ct = new Path2D(); ct.rect(0, 820, 1920, 260); b.fillStyle = C.teal; b.fill(ct);
+  stipple(b, ct, [0, 820, 1920, 1080], C.tealDot, (x, y) => .1 + .45 * clamp((y - 840) / 240), 13, 2.4);
+  b.fillStyle = C.tealTop; b.fillRect(0, 812, 1920, 22);
+  // 柜台上的咖啡杯和小盆栽
+  b.fillStyle = C.white; b.beginPath(); b.roundRect(250, 744, 70, 70, [6, 6, 18, 18]); b.fill();
+  b.strokeStyle = C.white; b.lineWidth = 9; b.beginPath(); b.arc(322, 778, 16, -1.2, 1.2); b.stroke();
+  b.fillStyle = C.orange; b.fillRect(250, 762, 70, 12);
+  b.fillStyle = '#C86B4A'; b.beginPath(); b.moveTo(1010, 812); b.lineTo(1000, 760); b.lineTo(1070, 760); b.lineTo(1060, 812); b.fill();
+  b.fillStyle = '#3F8F5E'; [[1018, 740, -.5], [1036, 728, 0], [1054, 742, .5]].forEach(([x, y, r]) => { b.save(); b.translate(x, y); b.rotate(r); b.beginPath(); b.ellipse(0, 0, 12, 30, 0, 0, 7); b.fill(); b.restore(); });
+}
+// 角色身上的颗粒纹理（source-atop 叠在角色层上）
+const [grainL, gx] = mk();
+{ const r = mulberry(5); for (let i = 0; i < 26000; i++) { const x = r() * 1920, y = r() * 1080, d = r() < .6; gx.fillStyle = d ? 'rgba(40,20,10,.28)' : 'rgba(255,255,255,.35)'; gx.fillRect(x, y, 2, 2); } }
+const [charL, ch] = mk();
+
+// ---------- 图标 ----------
+function icon(x, kind, cx, cy, s, col) {
+  x.save(); x.translate(cx, cy); x.scale(s, s); x.strokeStyle = col; x.lineWidth = 2.6; x.lineJoin = x.lineCap = 'round'; x.beginPath();
+  if (kind === 'mail') { x.roundRect(-10, -7, 20, 14, 2); x.moveTo(-10, -6); x.lineTo(0, 1); x.lineTo(10, -6); }
+  if (kind === 'chat') { x.roundRect(-10, -8, 20, 13, 4); x.moveTo(-4, 5); x.lineTo(-7, 10); x.lineTo(1, 5); }
+  if (kind === 'cal') { x.roundRect(-9, -7, 18, 16, 2); x.moveTo(-9, -2); x.lineTo(9, -2); x.moveTo(-4, -10); x.lineTo(-4, -5); x.moveTo(4, -10); x.lineTo(4, -5); }
+  if (kind === 'doc') { x.moveTo(-7, -10); x.lineTo(4, -10); x.lineTo(8, -6); x.lineTo(8, 10); x.lineTo(-7, 10); x.closePath(); x.moveTo(-3, -2); x.lineTo(4, -2); x.moveTo(-3, 3); x.lineTo(4, 3); }
+  if (kind === 'box') { x.moveTo(-9, -4); x.lineTo(0, -9); x.lineTo(9, -4); x.lineTo(9, 6); x.lineTo(0, 10); x.lineTo(-9, 6); x.closePath(); x.moveTo(-9, -4); x.lineTo(0, 1); x.lineTo(9, -4); x.moveTo(0, 1); x.lineTo(0, 10); }
+  x.stroke(); x.restore();
+}
+
+// ---------- 消息泡 ----------
+const KINDS = [['mail', '#6C8DF0'], ['cal', '#EF5B5B'], ['doc', '#E9A23B'], ['chat', '#4DB383'], ['box', '#9C7BE0']];
+const rnd = mulberry(21), BUB = [];
+const NB = 27;
+for (let i = 0; i < NB; i++) {
+  const a = -Math.PI * 1.08 + Math.PI * 1.22 * (i + rnd()) / NB, rad = 235 + rnd() * 160;
+  const [k, col] = KINDS[Math.floor(rnd() * KINDS.length)];
+  BUB.push({ x: 640 + Math.cos(a) * rad * 1.15, y: 380 + Math.sin(a) * rad * .9, k, col, t0: .12 + 1.3 * Math.pow(i / NB, .6), r: 30 + rnd() * 10, badge: rnd() < .5 });
+}
+const DANA = 15; Object.assign(BUB[DANA], { x: 905, y: 300, k: 'chat', col: '#4DB383', r: 40, badge: false });
+const PH = { x: 742, y: 640 };                                  // 手机屏幕中心
+BUB.forEach(bb => bb.off = 1.75 + .35 * clamp(Math.hypot(bb.x - PH.x, bb.y - PH.y) / 500));
+
+function bubble(bb, t) {
+  if (t < bb.t0) return;
+  const isD = bb === BUB[DANA];
+  let s = back(seg(t, bb.t0, bb.t0 + .3), 2.8), x = bb.x, y = bb.y;
+  const shake = 3 * seg(Math.min(t, FREEZE), .6, FREEZE);
+  const tt = Math.min(t, FREEZE);
+  x += Math.sin(tt * 31 + bb.t0 * 50) * shake; y += Math.cos(tt * 27 + bb.t0 * 40) * shake;
+  if (isD && t > FREEZE + .08) {                                 // Dana 的泡钻回手机
+    const k = eio(seg(t, FREEZE + .08, FREEZE + .32));
+    x = lerp(bb.x, PH.x, k); y = lerp(bb.y, PH.y, k) - Math.sin(Math.PI * k) * 60; s *= 1 - .75 * k;
+    if (k >= 1) return;
+  }
+  if (!isD && t > bb.off) {                                     // 其余的啪一下散掉
+    const q = seg(t, bb.off, bb.off + .16);
+    if (q >= 1) { const d = seg(t, bb.off + .16, bb.off + .4); if (d < 1) { g.fillStyle = bb.col; for (let j = 0; j < 5; j++) { const a = j * 1.256 + bb.t0 * 9; g.globalAlpha = 1 - d; g.beginPath(); g.arc(x + Math.cos(a) * (bb.r + 40 * eo(d)), y + Math.sin(a) * (bb.r + 40 * eo(d)), 5 * (1 - d), 0, 7); g.fill(); } g.globalAlpha = 1; } return; }
+    s *= q < .4 ? lerp(1, 1.18, q / .4) : lerp(1.18, 0, (q - .4) / .6);
+  }
+  g.save(); g.translate(x, y); g.scale(s, s);
+  g.fillStyle = 'rgba(31,42,68,.12)'; g.beginPath(); g.arc(4, 7, bb.r, 0, 7); g.fill();
+  g.fillStyle = bb.col; g.beginPath(); g.arc(0, 0, bb.r, 0, 7); g.fill();
+  if (isD && t > FREEZE) { g.strokeStyle = C.orange; g.lineWidth = 6; g.beginPath(); g.arc(0, 0, bb.r + 8, 0, 7); g.stroke(); }
+  icon(g, bb.k, 0, 0, bb.r / 22, '#fff');
+  if (bb.badge && t < FREEZE + .1) { g.fillStyle = C.red; g.beginPath(); g.arc(bb.r * .72, -bb.r * .72, 11, 0, 7); g.fill(); g.fillStyle = '#fff'; g.font = '700 13px Pop7'; g.textAlign = 'center'; g.fillText('!', bb.r * .72, -bb.r * .72 + 5); }
+  g.restore();
+}
+
+// ---------- 人物 ----------
+function mood(t) { return t < .6 ? 'calm' : t < 1.95 ? 'stress' : t < PRESS + .05 ? 'focus' : 'happy'; }
+function person(x, t) {
+  const m = mood(t);
+  const breathe = Math.sin(t * 2.4) * 2;
+  const tilt = damp(t, PRESS + .05, .07, .5, .35) + (m === 'stress' ? Math.sin(Math.min(t, FREEZE) * 40) * .008 * seg(t, .6, 1.4) : 0);
+  const bun = damp(t, PRESS + .05, 10, .32, .3) + damp(t, FREEZE, 6, .3, .25);
+  x.save(); x.translate(640, 500 + breathe);
+  // 身体
+  x.fillStyle = C.shirt; x.beginPath(); x.moveTo(-60, 0); x.bezierCurveTo(-150, 10, -175, 60, -180, 140); x.lineTo(-205, 420); x.lineTo(205, 420); x.lineTo(180, 140); x.bezierCurveTo(175, 60, 150, 10, 60, 0); x.closePath(); x.fill();
+  x.fillStyle = C.shirtD; x.beginPath(); x.moveTo(-180, 140); x.lineTo(-205, 420); x.lineTo(-150, 420); x.lineTo(-140, 170); x.closePath(); x.fill();
+  // 围裙
+  x.fillStyle = C.apron; x.beginPath(); x.moveTo(-90, 140); x.lineTo(90, 140); x.lineTo(110, 420); x.lineTo(-110, 420); x.closePath(); x.fill();
+  x.strokeStyle = C.apron; x.lineWidth = 16; x.beginPath(); x.moveTo(-80, 145); x.lineTo(-40, 20); x.moveTo(80, 145); x.lineTo(40, 20); x.stroke();
+  x.fillStyle = C.apronD; x.beginPath(); x.roundRect(-46, 230, 92, 60, 10); x.fill();
+  x.strokeStyle = C.shirt; x.lineWidth = 5; x.beginPath(); x.moveTo(-10, 236); x.lineTo(-10, 252); x.stroke();
+  // 领口
+  x.fillStyle = C.skinD; x.beginPath(); x.moveTo(-34, -6); x.lineTo(0, 40); x.lineTo(34, -6); x.closePath(); x.fill();
+  x.fillStyle = C.skin; x.beginPath(); x.roundRect(-26, -40, 52, 50, 12); x.fill();
+  // 左臂垂到柜台
+  x.strokeStyle = C.shirt; x.lineWidth = 62; x.lineCap = 'round'; x.lineJoin = 'round';
+  x.beginPath(); x.moveTo(-150, 70); x.lineTo(-195, 230); x.lineTo(-150, 330); x.stroke();
+  x.fillStyle = C.skin; x.beginPath(); x.ellipse(-128, 330, 32, 26, -.3, 0, 7); x.fill();
+  // 右臂举着手机
+  x.strokeStyle = C.shirtD; x.beginPath(); x.moveTo(150, 70); x.lineTo(196, 225); x.lineTo(118, 175); x.stroke();
+  // 手机
+  x.save(); x.translate(PH.x - 640, PH.y - 500); x.rotate(-.14);
+  x.fillStyle = C.navy; x.beginPath(); x.roundRect(-44, -82, 88, 164, 16); x.fill();
+  const glow = .55 + .45 * seg(t, FREEZE + .2, FREEZE + .4);
+  x.fillStyle = `rgba(255,253,248,${glow})`; x.beginPath(); x.roundRect(-36, -72, 72, 144, 10); x.fill();
+  if (t > FREEZE + .25) { x.fillStyle = C.orange; x.beginPath(); x.roundRect(-24, 30, 48, 18, 9); x.fill(); x.fillStyle = '#E5DED6'; x.fillRect(-24, -40, 48, 8); x.fillRect(-24, -24, 34, 8); }
+  x.restore();
+  // 握手机的手，拇指在按下时往下点
+  const thumb = t < PRESS ? -seg(t, PRESS - .2, PRESS - .05) * 6 : 10 * (1 - eo(seg(t, PRESS, PRESS + .25)));
+  x.fillStyle = C.skin; x.beginPath(); x.ellipse(98, 196, 30, 36, .3, 0, 7); x.fill();
+  x.save(); x.translate(110, 150 + thumb); x.rotate(-.5); x.beginPath(); x.ellipse(0, 0, 11, 26, 0, 0, 7); x.fill(); x.restore();
+  // 头
+  x.save(); x.translate(0, -130); x.rotate(tilt);
+  x.fillStyle = C.hair; x.beginPath(); x.ellipse(0, -8, 108, 112, 0, 0, 7); x.fill();
+  x.beginPath(); x.moveTo(-108, -8); x.lineTo(-104, 70); x.quadraticCurveTo(-80, 92, -60, 70); x.lineTo(60, 70); x.quadraticCurveTo(80, 92, 104, 70); x.lineTo(108, -8); x.fill();
+  x.save(); x.translate(0, -120 + bun * .4); x.rotate(bun * .006); x.beginPath(); x.arc(0, 0, 46, 0, 7); x.fill();
+  x.strokeStyle = C.hairL; x.lineWidth = 4; x.beginPath(); for (let a = 0; a < 9; a += .25) { const r = 4 + a * 3.6; x.lineTo(Math.cos(a) * r, Math.sin(a) * r); } x.stroke(); x.restore();
+  x.fillStyle = C.skin; x.beginPath(); x.ellipse(-86, 18, 14, 20, .2, 0, 7); x.ellipse(86, 18, 14, 20, -.2, 0, 7); x.fill();
+  x.beginPath(); x.moveTo(-82, -10); x.bezierCurveTo(-84, 70, -40, 110, 0, 110); x.bezierCurveTo(40, 110, 84, 70, 82, -10); x.bezierCurveTo(80, -70, -80, -70, -82, -10); x.fill();
+  // 刘海
+  x.fillStyle = C.hair; x.beginPath(); x.moveTo(-96, 10); x.bezierCurveTo(-100, -90, 90, -110, 98, 6);
+  x.quadraticCurveTo(70, -34, 30, -40); x.quadraticCurveTo(10, -18, -16, -40); x.quadraticCurveTo(-60, -30, -96, 10); x.fill();
+  x.strokeStyle = C.hairL; x.lineWidth = 3; x.beginPath(); x.moveTo(-40, -74); x.quadraticCurveTo(0, -84, 40, -70); x.stroke();
+  // 脸
+  const look = m === 'focus' ? 6 : m === 'stress' ? Math.sin(Math.min(t, FREEZE) * 9) * 4 : 0;
+  x.fillStyle = C.cheek; x.globalAlpha = m === 'happy' ? .85 : .45; x.beginPath(); x.arc(-50, 50, 15, 0, 7); x.arc(50, 50, 15, 0, 7); x.fill(); x.globalAlpha = 1;
+  x.strokeStyle = C.ink; x.fillStyle = C.ink; x.lineWidth = 5; x.lineCap = 'round';
+  if (m === 'happy') { [-34, 34].forEach(ex => { x.beginPath(); x.arc(ex, 18, 11, Math.PI * 1.1, Math.PI * 1.9); x.stroke(); }); }
+  else { [-34, 34].forEach(ex => { x.beginPath(); x.ellipse(ex + look, 16, 8, m === 'stress' ? 11 : 9, 0, 0, 7); x.fill(); x.fillStyle = '#fff'; x.beginPath(); x.arc(ex + look + 3, 12, 3, 0, 7); x.fill(); x.fillStyle = C.ink; }); }
+  // 眉毛：紧张时内侧往上挑
+  const bro = m === 'stress' ? 1 : 0;
+  x.lineWidth = 6; [-1, 1].forEach(sd => { x.beginPath(); x.moveTo(sd * 52, -16 + bro * 2); x.lineTo(sd * 18, -14 - bro * 12); x.stroke(); });
+  x.strokeStyle = C.skinD; x.lineWidth = 4; x.beginPath(); x.moveTo(-4, 36); x.quadraticCurveTo(4, 46, -2, 50); x.stroke();
+  x.strokeStyle = C.ink; x.lineWidth = 5;
+  if (m === 'calm') { x.beginPath(); x.moveTo(-14, 72); x.quadraticCurveTo(0, 78, 14, 72); x.stroke(); }
+  if (m === 'stress') { x.beginPath(); x.moveTo(-18, 76); for (let i = 1; i <= 6; i++) x.lineTo(-18 + i * 6, 76 + (i % 2 ? -4 : 3)); x.stroke(); }
+  if (m === 'focus') { x.beginPath(); x.moveTo(-12, 72); x.quadraticCurveTo(0, 80, 14, 70); x.stroke(); }
+  if (m === 'happy') { x.fillStyle = C.ink; x.beginPath(); x.moveTo(-24, 66); x.quadraticCurveTo(0, 104, 24, 66); x.closePath(); x.fill(); x.fillStyle = '#E8726A'; x.beginPath(); x.ellipse(0, 84, 11, 6, 0, 0, 7); x.fill(); }
+  x.restore();
+  x.restore();
+}
+function tension(t) {                                           // 紧张线：从头顶右前方放射，越来越红、抖
+  const k = seg(t, .8, 1.05) * (1 - seg(t, 1.9, 2.05)); if (k <= 0) return;
+  const tt = Math.min(t, FREEZE), j = Math.sin(tt * 60) * 2.5 * seg(tt, 1.1, 1.4);
+  const col = `rgb(${Math.round(lerp(240, 232, k))},${Math.round(lerp(150, 71, seg(t, 1, 1.3)))},${Math.round(lerp(140, 63, seg(t, 1, 1.3)))})`;
+  g.strokeStyle = col; g.lineWidth = 8; g.lineCap = 'round';
+  [[-.95, 0], [-.6, 1], [-.25, 2]].forEach(([a]) => {
+    const L = 46 * back(k, 2), x0 = 760 + Math.cos(a) * 30 + j, y0 = 230 + Math.sin(a) * 30;
+    g.beginPath(); g.moveTo(x0 + Math.cos(a) * 30, y0 + Math.sin(a) * 30); g.lineTo(x0 + Math.cos(a) * (30 + L), y0 + Math.sin(a) * (30 + L)); g.stroke();
+  });
+}
+
+// ---------- Duet 卡（从手机里弹出来） ----------
+const CARD = { x: 1100, y: 240, w: 660, h: 440 };
+function card(t) {
+  const t0 = FREEZE + .3; if (t < t0) return;
+  const k = seg(t, t0, t0 + .7);
+  const s = 1 - Math.exp(-7 * k) * Math.cos(10 * k);               // 阻尼弹出，带一点过冲
+  const cx = lerp(PH.x, CARD.x + CARD.w / 2, eio(clamp(k * 1.6))), cy = lerp(PH.y, CARD.y + CARD.h / 2, eio(clamp(k * 1.6)));
+  g.save(); g.translate(cx, cy); g.rotate((1 - s) * -.25); g.scale(Math.max(.05, s), Math.max(.05, s)); g.translate(-CARD.w / 2, -CARD.h / 2);
+  g.fillStyle = 'rgba(31,42,68,.16)'; rr(14, 18, CARD.w, CARD.h, 40); g.fill();
+  g.fillStyle = C.white; rr(0, 0, CARD.w, CARD.h, 40); g.fill();
+  // 顶栏
+  g.fillStyle = C.orange; g.beginPath(); g.arc(52, 54, 11, 0, 7); g.fill(); g.strokeStyle = C.orange; g.lineWidth = 3; g.beginPath(); g.arc(67, 54, 11, 0, 7); g.stroke();
+  g.fillStyle = C.navy; g.font = '600 24px Pop6'; g.textAlign = 'left'; g.fillText('Claude Duet', 92, 63);
+  g.fillStyle = '#8A8FA3'; g.font = '600 20px Pop6'; g.fillText('Dana · “Can you confirm Friday?”', 44, 124);
+  g.fillStyle = C.navy; g.font = '700 60px Pop7'; g.fillText('Reply to Dana?', 42, 200);
+  g.fillStyle = '#F1ECE5'; rr(42, 226, CARD.w - 84, 74, 22); g.fill();
+  g.fillStyle = '#4A5068'; g.font = '600 23px Pop6'; g.fillText('“Yes, Friday works. Invoice attached.”', 66, 271);
+  // 按钮
+  const pr = t < PRESS ? 1 - .06 * seg(t, PRESS - .08, PRESS) : lerp(.94, 1, back(seg(t, PRESS, PRESS + .25), 3));
+  const done = seg(t, PRESS + .08, PRESS + .2);
+  g.save(); g.translate(42 + 115, 336 + 36); g.scale(pr, pr);
+  g.fillStyle = C.orange; rr(-115, -36, 230 + 60 * eo(done), 72, 36); g.fill();
+  g.fillStyle = '#fff'; g.font = '700 27px Pop7'; g.textAlign = 'center';
+  if (done < 1) { g.globalAlpha = 1 - done; g.fillText('Approve', 0, 10); g.globalAlpha = 1; }
+  if (done > 0) {
+    g.globalAlpha = done; g.strokeStyle = '#fff'; g.lineWidth = 6; g.lineCap = g.lineJoin = 'round';
+    const ck = eo(seg(t, PRESS + .12, PRESS + .4));
+    g.beginPath(); g.moveTo(-40, 0); g.lineTo(-40 + 12 * clamp(ck * 2), 12 * clamp(ck * 2)); if (ck > .5) g.lineTo(-28 + 24 * (ck - .5) * 2, 12 - 26 * (ck - .5) * 2); g.stroke();
+    g.fillText('Sent', 50, 10); g.globalAlpha = 1;
+  }
+  g.restore();
+  if (done < 1) { g.globalAlpha = 1 - done; g.strokeStyle = '#C9C3BB'; g.lineWidth = 3; rr(42 + 250, 336, 140, 72, 36); g.stroke(); g.fillStyle = C.navy; g.font = '600 26px Pop6'; g.textAlign = 'center'; g.fillText('Edit', 42 + 320, 382); g.globalAlpha = 1; }
+  g.textAlign = 'left';
+  g.restore();
+  if (t > PRESS + .1) {                                           // 按下后的小星星
+    const q = seg(t, PRESS + .1, PRESS + .6);
+    g.strokeStyle = C.orange; g.lineWidth = 6; g.lineCap = 'round'; g.globalAlpha = 1 - q;
+    for (let i = 0; i < 6; i++) { const a = -2.6 + i * .42, r0 = 60 + 50 * eo(q); g.beginPath(); g.moveTo(CARD.x + 157 + Math.cos(a) * r0, CARD.y + 372 + Math.sin(a) * r0); g.lineTo(CARD.x + 157 + Math.cos(a) * (r0 + 22), CARD.y + 372 + Math.sin(a) * (r0 + 22)); g.stroke(); }
+    g.globalAlpha = 1;
+  }
+}
+
+const CAP = 'It asks before it acts.', CAP_T0 = .4;
+function capBox() { g.font = '600 40px Pop6'; const w = g.measureText(CAP).width + 80; return { x: 960 - w / 2, y: 930, w, h: 80 }; }
+function caption(t) {
+  if (t < CAP_T0) return;
+  const k = back(seg(t, CAP_T0, CAP_T0 + .35), 2), b = capBox();
+  g.save(); g.translate(960, b.y + b.h / 2); g.scale(k, k); g.translate(-960, -(b.y + b.h / 2));
+  g.fillStyle = 'rgba(15,40,38,.35)'; rr(b.x + 8, b.y + 10, b.w, b.h, 40); g.fill();
+  g.fillStyle = C.white; rr(b.x, b.y, b.w, b.h, 40); g.fill();
+  g.fillStyle = C.navy; g.font = '600 40px Pop6'; g.textAlign = 'center'; g.fillText(CAP, 960, b.y + 54); g.textAlign = 'left';
+  g.restore();
+}
+
+window.DUR = 4; window.EV = [];
+window.TEXTS = t => { if (t < CAP_T0 + .35) return []; const b = capBox(); return [{ id: 'cap', text: CAP, x0: b.x * S, y0: b.y * S, x1: (b.x + b.w) * S, y1: (b.y + b.h) * S }]; };
+window.render = t => {
+  g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(bgL, 0, 0);
+  g.setTransform(S, 0, 0, S, 0, 0);
+  // 角色层：画完再盖颗粒
+  ch.setTransform(1, 0, 0, 1, 0, 0); ch.clearRect(0, 0, W, H); ch.setTransform(S, 0, 0, S, 0, 0);
+  person(ch, t);
+  ch.setTransform(1, 0, 0, 1, 0, 0); ch.globalCompositeOperation = 'source-atop'; ch.drawImage(grainL, 0, 0); ch.globalCompositeOperation = 'source-over';
+  g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(charL, 0, 0); g.setTransform(S, 0, 0, S, 0, 0);
+  // 柜台前沿压住身体下半截
+  g.fillStyle = C.tealTop; g.fillRect(0, 812, 1920, 22);
+  g.save(); g.beginPath(); g.rect(0, 834, 1920, 246); g.clip(); g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(bgL, 0, 0); g.restore();
+  g.setTransform(S, 0, 0, S, 0, 0);
+  tension(t);
+  BUB.forEach(bb => bubble(bb, t));
+  card(t);
+  caption(t);
+};
+
+await document.fonts.ready;
+window.render(0);
+window.READY = true;
+</script>
+</body>
+</html>

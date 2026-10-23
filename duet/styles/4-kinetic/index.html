@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>duet · kinetic type</title>
+<style>html, body { margin: 0; background: #000; overflow: hidden } canvas { display: block }</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script type="module">
+// 样片 ④ huashu grammar/y5_kinetic_type：120 BPM。藏青底上「247 unread」砸进来，右边一个个事务词从槽里升起、越来越密；
+// 冻住 → 镜头冲进橙色的「Dana: Friday?」小块（穿越放大），橙色铺满成下一屏 → 「Reply to / Dana?」砸入 → 草稿卡滑入 → Approve 键帽按下 → Sent
+import { clamp, lerp, seg } from '/core/lib.js';
+
+const c = document.getElementById('c'), g = c.getContext('2d');
+const W = c.width = innerWidth, H = c.height = innerHeight, S = W / 1920;
+for (const [n, f] of [['Arch', 'ArchivoBlack-400'], ['Pop6', 'Poppins-600'], ['Pop7', 'Poppins-700'], ['Pop8', 'Poppins-800']])
+  await new FontFace(n, `url(fonts/${f}.woff)`).load().then(x => document.fonts.add(x));
+
+const NAVY = '#14213D', ORANGE = '#FF6A3D', INK = '#111111', CREAM = '#F4EFE6', YEL = '#FFD23F', WHITE = '#FFFFFF';
+const BPM = 120, B = n => n * 60 / BPM;                         // 拍号 → 秒
+const expoOut = p => p >= 1 ? 1 : 1 - Math.pow(2, -10 * clamp(p));
+const expoIn = p => p <= 0 ? 0 : Math.pow(2, 10 * (clamp(p) - 1));
+const backOut = (p, s = 2.8) => { p = clamp(p) - 1; return 1 + p * p * ((s + 1) * p + s); };
+const slam = t => t < 0 ? 0 : 1 + .7 * Math.exp(-10 * t) * Math.cos(2 * Math.PI * 2.2 * t) * (t < .06 ? 1 : 1);   // 1.7 → 1，欠阻尼
+const FREEZE = 1.5, Z0 = 1.55, Z1 = 2.0, ZR = .55;             // 穿越放大：前 55% 冲进去，后 45% 新画面落定
+const rr = (x, y, w, h, r) => { g.beginPath(); g.roundRect(x, y, w, h, r); };
+
+function txt(s, x, y, size, font, fill, { sc = 1, ax = 0, ay = 0, rot = 0, a = 1, track = 0, align = 'left' } = {}) {
+  if (a <= 0 || sc <= 0) return;
+  g.save(); g.globalAlpha *= a; g.translate(ax, ay); g.rotate(rot); g.scale(sc, sc); g.translate(-ax, -ay);
+  g.font = `${size}px ${font}`; g.letterSpacing = track + 'px'; g.textAlign = align; g.fillStyle = fill; g.fillText(s, x, y); g.restore();
+}
+function rise(s, x, y, size, font, fill, p, track = 0) {         // 从基线下的槽里升起
+  if (p <= 0) return;
+  g.save(); g.font = `${size}px ${font}`; g.letterSpacing = track + 'px';
+  g.beginPath(); g.rect(x - 6, y - size * 1.1, g.measureText(s).width + 30, size * 1.4); g.clip();
+  g.fillStyle = fill; g.fillText(s, x, y + (1 - expoOut(p)) * size * 1.2); g.restore();
+}
+function dots(col, a, t) {
+  const off = (Math.min(t, FREEZE) * 36) % 64;
+  g.fillStyle = col; g.globalAlpha = a;
+  for (let x = -64; x < 2000; x += 64) for (let y = -64; y < 1150; y += 64) { g.beginPath(); g.arc(x + off, y + off, 3, 0, 7); g.fill(); }
+  g.globalAlpha = 1;
+}
+
+// ---------- 第一屏：风暴 ----------
+const WORDS = ['invoices', 'payroll', 'meetings', 'Dana: Friday?', 'contracts', 'refunds', 'shifts', 'suppliers', 'taxes', 'reviews', 'returns', 'orders', 'hiring', 'rent', 'email'];
+// 拍号：先半拍一个，再四分之一拍，最后挤成一串（越来越密）
+const POS = [];
+{ let i = 0, x = 1000, y = 190;                                 // 按实测字宽流式排，排满一行换行
+  for (const w of WORDS) {
+    const isD = w.startsWith('Dana'); g.font = isD ? '44px Pop7' : '54px Pop7'; const wd = g.measureText(w).width + (isD ? 48 : 0);
+    if (x + wd > 1840) { x = 1000; y += 124; }
+    POS.push({ w, x: x + (isD ? 22 : 0), y, t: i < 2 ? B(1 + i * .5) : i < 6 ? B(2 + (i - 2) * .25) : B(2.5 + (i - 6) * .055) });
+    x += wd + 56; i++;
+  } }
+const CHIP = POS.find(p => p.w.startsWith('Dana'));
+function chipRect() { g.font = '44px Pop7'; const w = g.measureText(CHIP.w).width + 48; return { x: CHIP.x - 22, y: CHIP.y - 52, w, h: 70 }; }
+
+function screen1(t) {
+  g.fillStyle = NAVY; g.fillRect(0, 0, 1920, 1080);
+  dots('#ffffff', .08, t);
+  // 背景巨型数字
+  txt('247', 1880, 1040, 620, 'Arch', '#ffffff', { a: .06 * clamp((t - .05) * 6), align: 'right', track: -20 });
+  const s = slam(t - .05);
+  txt('247', 130, 520, 330, 'Arch', YEL, { sc: s, ax: 130, ay: 420, a: clamp((t - .05) / .06), track: -10 });
+  rise('unread', 140, 640, 96, 'Pop8', WHITE, seg(t, B(.5), B(.5) + .33));
+  rise('MONDAY · 09:41', 140, 112, 40, 'Pop7', 'rgba(255,255,255,.55)', seg(t, .1, .4), 6);
+  for (const p of POS) {
+    const k = seg(Math.min(t, 9), p.t, p.t + .32);
+    if (k <= 0) continue;
+    if (p === CHIP) {
+      const r = chipRect(), sc = backOut(seg(t, p.t, p.t + .38));
+      g.save(); g.translate(r.x + r.w / 2, r.y + r.h / 2); g.scale(sc, sc); g.translate(-(r.x + r.w / 2), -(r.y + r.h / 2));
+      g.fillStyle = ORANGE; rr(r.x, r.y, r.w, r.h, 35); g.fill(); g.fillStyle = INK; g.font = '44px Pop7'; g.fillText(p.w, p.x + 2, p.y); g.restore();
+    } else rise(p.w, p.x, p.y, 54, 'Pop7', t > FREEZE ? 'rgba(255,255,255,.45)' : WHITE, k);
+  }
+}
+
+// ---------- 第二屏：Reply to Dana? ----------
+const S2 = Z0 + ZR * (Z1 - Z0);                                   // 新画面露出的那一刻
+const KEY = { x: 1180, y: 690, w: 360, h: 120 };
+const PRESS = 2.95;
+function screen2(t) {
+  const lt = t - S2;
+  g.fillStyle = ORANGE; g.fillRect(0, 0, 1920, 1080);
+  dots(INK, .09, t);
+  txt('CLAUDE DUET · NEEDS YOUR OK', 130, 128, 34, 'Pop7', INK, { a: clamp(lt / .15), track: 6 });
+  const t1 = B(4) - S2, t2 = t1 + B(.5);
+  txt('Reply to', 124, 420, 190, 'Arch', INK, { sc: slam(lt - t1), ax: 124, ay: 360, a: clamp((lt - t1) / .06), track: -5 });
+  // 「Dana?」：先砸进来，按下 Approve 那一拍底下刷出黄色荧光笔
+  const mk = seg(t, PRESS + .05, PRESS + .35);
+  if (mk > 0) { g.fillStyle = YEL; g.beginPath(); const x0 = 116, x1 = 116 + 560 * expoOut(mk); g.moveTo(x0, 600); g.lineTo(x1, 600 - 0); g.lineTo(x1 + 18, 520); g.lineTo(x0 + 18, 520); g.closePath(); g.fill(); }
+  txt('Dana?', 124, 610, 190, 'Arch', INK, { sc: slam(lt - t2), ax: 124, ay: 560, a: clamp((lt - t2) / .06), track: -5 });
+  // 证据物：草稿卡从右边滑进来
+  const ct = seg(t, B(5), B(5) + .4), cx = 1180 + (1 - expoOut(ct)) * 700, rot = (1 - expoOut(ct)) * .06;
+  if (ct > 0) {
+    g.save(); g.translate(cx, 300); g.rotate(rot);
+    g.fillStyle = 'rgba(17,17,17,.16)'; rr(10, 14, 600, 300, 30); g.fill();
+    g.fillStyle = CREAM; rr(0, 0, 600, 300, 30); g.fill();
+    g.fillStyle = '#7B7468'; g.font = '30px Pop6'; g.fillText('Draft reply to Dana', 44, 70);
+    g.fillStyle = INK; g.font = '44px Pop7'; g.fillText('“Yes, Friday works.', 44, 150); g.fillText('Invoice attached.”', 44, 210);
+    g.restore();
+  }
+  // Approve 键帽：弹入 → 按下压 14% → 回弹 → 打勾
+  const kt = seg(t, B(5.25), B(5.25) + .36);
+  if (kt > 0) {
+    let sc = backOut(kt, 2.6);
+    const press = t >= PRESS ? .14 * Math.exp(-18 * (t - PRESS)) : 0;
+    const pulse = t > PRESS + .1 ? 1 + .12 * Math.sin(Math.PI * seg(t, PRESS + .1, PRESS + .32)) : 1;
+    g.save(); g.translate(KEY.x + KEY.w / 2, KEY.y + KEY.h / 2); g.scale(sc * pulse, sc * pulse);
+    g.fillStyle = INK; rr(-KEY.w / 2, -KEY.h / 2 + 12, KEY.w, KEY.h, 22); g.fill();
+    g.translate(0, press * 80);
+    g.fillStyle = t > PRESS + .05 ? YEL : WHITE; rr(-KEY.w / 2, -KEY.h / 2, KEY.w, KEY.h, 22); g.fill();
+    g.fillStyle = INK; g.font = '56px Pop8'; g.textAlign = 'center';
+    if (t < PRESS + .05) g.fillText('Approve', 0, 20);
+    else {
+      const ck = seg(t, PRESS + .05, PRESS + .27);
+      g.strokeStyle = INK; g.lineWidth = 12; g.lineCap = g.lineJoin = 'round'; g.beginPath(); g.moveTo(-100, 0);
+      g.lineTo(-100 + 22 * clamp(ck * 2), 22 * clamp(ck * 2)); if (ck > .5) g.lineTo(-78 + 44 * (ck - .5) * 2, 22 - 46 * (ck - .5) * 2); g.stroke();
+      g.fillText('Sent', 40, 20);
+    }
+    g.restore(); g.textAlign = 'left';
+  }
+}
+
+const CAP = 'It asks before it acts.', CAP_T0 = .45;
+function capBox() { g.font = '52px Pop7'; const w = g.measureText(CAP).width; return { x: 130, y: 900, w: w + 60, h: 84 }; }
+function caption(t) {                                              // 辅句：黑色斜切色块刷出，字从槽里升起（两屏都读得清）
+  if (t < CAP_T0) return; const b = capBox(), k = expoOut(seg(t, CAP_T0, CAP_T0 + .3));
+  g.fillStyle = INK; g.beginPath(); g.moveTo(b.x - 20, b.y + b.h); g.lineTo(b.x - 20 + b.w * k, b.y + b.h); g.lineTo(b.x - 20 + b.w * k + 15, b.y); g.lineTo(b.x - 5, b.y); g.closePath(); g.fill();
+  rise(CAP, b.x + 12, b.y + 62, 52, 'Pop7', WHITE, seg(t, CAP_T0 + .12, CAP_T0 + .45));
+}
+
+window.DUR = 4; window.EV = [];
+window.TEXTS = t => { if (t < CAP_T0 + .45) return []; const b = capBox(); return [{ id: 'cap', text: CAP, x0: (b.x - 20) * S, y0: b.y * S, x1: (b.x + b.w) * S, y1: (b.y + b.h) * S }]; };
+window.render = t => {
+  g.setTransform(S, 0, 0, S, 0, 0);
+  // 镜头微漂 + 每拍一冲（冻住时停）
+  const tt = Math.min(t, FREEZE) + Math.max(0, t - Z1);
+  const dx = 5 * Math.sin(tt * .9) + 3 * Math.sin(tt * 2.3), dy = 4 * Math.cos(tt * .8), rot = .006 * Math.sin(tt * .5);
+  const beat = (t % B(1)), bump = (t < FREEZE || t > Z1) ? 1 + .012 * Math.exp(-25 * beat) : 1;
+  g.translate(960 + dx, 540 + dy); g.rotate(rot); g.scale(bump, bump); g.translate(-960, -540);
+  if (t < Z0 + ZR * (Z1 - Z0)) {
+    const p = seg(t, Z0, Z0 + ZR * (Z1 - Z0)), z = 1 + 29 * expoIn(p), r = chipRect();
+    const fx = r.x + r.w * .5, fy = r.y + r.h / 2;
+    g.translate(fx, fy); g.scale(z, z); g.translate(-fx, -fy);
+    screen1(t);
+  } else {
+    const p = seg(t, S2, Z1), z = lerp(1.25, 1, expoOut(p));
+    g.translate(960, 540); g.scale(z, z); g.translate(-960, -540);
+    screen2(t);
+  }
+  g.setTransform(S, 0, 0, S, 0, 0);
+  caption(t);
+};
+
+await document.fonts.ready;
+window.render(0);
+window.READY = true;
+</script>
+</body>
+</html>

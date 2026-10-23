@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>duet · swiss</title>
+<style>html, body { margin: 0; background: #000; overflow: hidden } canvas { display: block }</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script type="module">
+// 样片 ② lemo/swiss-motion：右页一行行黑条按拍子卡进来（越来越密），左页巨大的未读数往上爬；
+// 硬停 → 刀切掉所有黑条 → 唯一的橙色那条（Dana）线性、不对网格地走到左页长成大块 → 黑色 Approve 块 → 按下 → Sent
+import { clamp, lerp, seg } from '/core/lib.js';
+
+const c = document.getElementById('c'), g = c.getContext('2d');
+const W = c.width = innerWidth, H = c.height = innerHeight, S = W / 1920;
+await new FontFace('Inter', 'url(fonts/Inter-var.woff)', { weight: '100 900' }).load().then(f => document.fonts.add(f));
+
+const PAGE = '#EAE9E5', INK = '#111111', SIG = '#FF5A1F', GREY = '#8C8B86', RULE = '#D3D2CC';
+// 唯一的缓动 cubic-bezier(.7,0,.2,1)
+function bez(x1, y1, x2, y2) {
+  const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx, cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
+  return x => { x = clamp(x); let u = x; for (let i = 0; i < 8; i++) { const f = ((ax * u + bx) * u + cx) * u - x, d = (3 * ax * u + 2 * bx) * u + cx; if (Math.abs(d) < 1e-6) break; u -= f / d; } return ((ay * u + by) * u + cy) * u; };
+}
+const E = bez(.7, 0, .2, 1);
+const col = i => 96 + i * 146;                         // 12 栏：栏宽 122，栏距 24，左右边距 96
+const span = n => n * 122 + (n - 1) * 24;
+
+const ROWS = ['Invoice #2041 overdue', 'Payroll runs tomorrow', 'Meeting moved to 4:00', 'Oat milk: 2 cases left', 'Contract ready to sign',
+  '14 unread in #kitchen', 'Supplier price change', 'Dana: Can you confirm Friday?', 'Shift swap request', 'Refund request #883',
+  'Conflict on Thursday', 'Delivery delayed', 'Quarterly tax reminder'];
+const AGE = ['2m', '1h', '5m', 'now', '12m', 'now', '8m', 'now', '3m', '6m', 'now', '20m', '1d'];
+const DANA = 7;
+// 拍子越分越细：八分 → 十六分 → 三十二分
+const T_IN = [.10, .35, .60, .80, .95, 1.075, 1.175, 1.25, 1.3125, 1.36, 1.40, 1.4375, 1.46875];
+const COUNT = [3, 11, 26, 40, 58, 77, 95, 121, 150, 176, 201, 226, 247];
+const RX = col(6), RW = span(6), RY = 96, RH = 52, RP = 64;
+const STOP = 1.5;
+const dist = i => Math.abs(i - DANA);
+const CUT = i => 1.56 + .045 * dist(i);
+const BLOCK = { x: col(0), y: 216, w: span(7), h: 470 };
+const MOVE0 = 1.9, MOVE1 = 2.32;
+const APP = { x: col(8), y: 566, w: span(4), h: 120 };
+const PRESS = 2.95;
+
+function wipeRect(x, y, w, h, k, fill) { if (k <= 0) return; g.fillStyle = fill; g.fillRect(x, y, w * k, h); }
+// 一行字从基线下的裁切框里升上来
+function riseText(txt, x, y, size, weight, fill, k, spacing = 0) {
+  if (k <= 0) return;
+  g.save(); g.font = `${weight} ${size}px Inter`; g.letterSpacing = spacing + 'px';
+  g.beginPath(); g.rect(x - 4, y - size * 1.05, g.measureText(txt).width + 20, size * 1.35); g.clip();
+  g.fillStyle = fill; g.fillText(txt, x, y + (1 - E(k)) * size * 1.2); g.restore();
+}
+function knifeBar(x, y, w, h, t0, t, fill, drawInner) {   // 刀切：一条线横穿，然后收成中线
+  const a = seg(t, t0, t0 + .08), b = seg(t, t0 + .08, t0 + .2);
+  if (b >= 1) return;
+  const hh = h * (1 - E(b));
+  g.save(); g.beginPath(); g.rect(x, y + (h - hh) / 2, w, hh); g.clip();
+  g.fillStyle = fill; g.fillRect(x, y, w, h); drawInner && drawInner(); g.restore();
+  if (a > 0 && b < 1) { g.fillStyle = PAGE; g.fillRect(x, y + h / 2 - 1, w * a, 2); }
+}
+
+window.DUR = 4; window.EV = [];
+const CAP = 'It asks before it acts.', CAP_T0 = .45;
+window.TEXTS = t => t < CAP_T0 + .5 ? [] : [{ id: 'cap', text: CAP, x0: col(0) * S, y0: 900 * S, x1: (col(0) + 760) * S, y1: 980 * S }];
+
+window.render = t => {
+  g.setTransform(S, 0, 0, S, 0, 0);
+  g.fillStyle = PAGE; g.fillRect(0, 0, 1920, 1080);
+  // 栏线（很淡）
+  g.fillStyle = 'rgba(0,0,0,.045)';
+  for (let i = 0; i < 12; i++) { g.fillRect(col(i), 0, 1, 1080); g.fillRect(col(i) + 122, 0, 1, 1080); }
+  // 角落的技术注记
+  g.font = '500 19px Inter'; g.fillStyle = GREY; g.textAlign = 'left';
+  g.fillStyle = RULE; g.fillRect(col(0), 52, span(3), 1); g.fillRect(col(9), 52, span(3), 1);
+  g.fillStyle = INK; g.font = '650 19px Inter'; g.fillText('Claude Duet', col(0), 78);
+  g.fillStyle = GREY; g.font = '500 19px Inter';
+  const nIn = T_IN.filter(x => t >= x).length;
+  g.fillText(t < MOVE0 ? `Monday 09:41 — ${String(nIn).padStart(2, '0')} / 13 rows` : 'Monday 09:41 — 01 / 247 needs you', col(9), 78);
+
+  // 左页：巨大的计数（按模块一级级爬）
+  const cnt = nIn ? COUNT[nIn - 1] : 0;
+  const numCut = 1.62;
+  if (t < numCut + .2) {
+    g.save();
+    const b = seg(t, numCut + .08, numCut + .2), hh = 1 - E(b);
+    g.beginPath(); g.rect(0, 640 - 300 * hh - 300 * (1 - hh) / 2 - 0, 960, 330 * hh + 1); g.clip();
+    g.font = '780 400px Inter'; g.letterSpacing = '-14px'; g.fillStyle = INK; g.fillText(String(cnt), col(0) - 22, 640);
+    g.restore();
+    if (t > numCut && b < 1) { g.fillStyle = PAGE; g.fillRect(col(0), 494, 860 * seg(t, numCut, numCut + .08), 3); }
+    g.fillStyle = GREY; g.font = '500 19px Inter'; g.fillText('unread, across 9 apps', col(0), 690);
+  }
+
+  // 右页：一行行黑条
+  for (let i = 0; i < ROWS.length; i++) {
+    if (t < T_IN[i]) continue;
+    const y = RY + i * RP, k = E(seg(t, T_IN[i], T_IN[i] + .12)), isD = i === DANA;
+    if (isD && t >= MOVE0) continue;
+    const inner = () => {
+      g.font = '600 21px Inter'; g.fillStyle = isD ? INK : '#fff'; g.fillText(ROWS[i], RX + 20, y + 33);
+      g.textAlign = 'right'; g.font = '500 17px Inter'; g.fillStyle = isD ? INK : '#9a9a96'; g.fillText(AGE[i], RX + RW - 18, y + 33); g.textAlign = 'left';
+    };
+    if (!isD && t >= CUT(i)) { knifeBar(RX, y, RW, RH, CUT(i), t, INK, inner); continue; }
+    g.save(); g.beginPath(); g.rect(RX, y, RW * k, RH); g.clip();
+    g.fillStyle = isD ? SIG : INK; g.fillRect(RX, y, RW, RH); inner(); g.restore();
+    // 序号
+    g.font = '500 15px Inter'; g.fillStyle = GREY; g.textAlign = 'right'; g.fillText(String(i + 1).padStart(2, '0'), RX - 14, y + 31); g.textAlign = 'left';
+  }
+
+  // 例外：橙条线性地（不对网格）走到左页，长成大块
+  if (t >= MOVE0) {
+    const p = clamp((t - MOVE0) / (MOVE1 - MOVE0));            // 线性，不缓动
+    const y0 = RY + DANA * RP;
+    const x = lerp(RX, BLOCK.x, p), y = lerp(y0, BLOCK.y, p), w = lerp(RW, BLOCK.w, p), h = lerp(RH, BLOCK.h, p);
+    g.fillStyle = SIG; g.fillRect(x, y, w, h);
+    if (p < 1) {                                               // 坐标读数：离开网格
+      g.font = '500 15px Inter'; g.fillStyle = INK; g.fillText(`x ${Math.round(x)}  y ${Math.round(y)}  — off grid`, x, y - 12);
+    }
+    const q = t - MOVE1;
+    g.save(); g.beginPath(); g.rect(BLOCK.x, BLOCK.y, BLOCK.w, BLOCK.h); g.clip();
+    riseText('Dana — “Can you confirm Friday?”', BLOCK.x + 40, BLOCK.y + 64, 26, 560, INK, seg(q, 0, .14));
+    g.fillStyle = INK; if (q > .1) g.fillRect(BLOCK.x + 40, BLOCK.y + 94, (BLOCK.w - 80) * E(seg(q, .1, .3)), 2);
+    riseText('Reply to', BLOCK.x + 34, BLOCK.y + 238, 128, 780, INK, seg(q, .06, .2), -3);
+    riseText('Dana?', BLOCK.x + 34, BLOCK.y + 364, 128, 780, INK, seg(q, .12, .26), -3);
+    riseText('“Yes — Friday works. Invoice attached.”', BLOCK.x + 40, BLOCK.y + 430, 28, 500, INK, seg(q, .2, .34));
+    g.restore();
+  }
+
+  // Approve：黑块从左擦出；按下时向内收一格，再出 Sent
+  if (t >= 2.38) {
+    const k = E(seg(t, 2.38, 2.56));
+    g.fillStyle = RULE; g.fillRect(APP.x, APP.y - 44, APP.w * k, 1);
+    riseText('Send reply · needs your OK', APP.x, APP.y - 16, 19, 500, GREY, seg(t, 2.46, 2.6));
+    const inset = t >= PRESS && t < PRESS + .16 ? 6 : 0;
+    wipeRect(APP.x + inset, APP.y + inset, APP.w - 2 * inset, APP.h - 2 * inset, k, INK);
+    const sent = seg(t, PRESS + .16, PRESS + .3);
+    g.save(); g.beginPath(); g.rect(APP.x, APP.y, APP.w * k, APP.h); g.clip();
+    if (sent <= 0) {
+      riseText('Approve', APP.x + 36, APP.y + 76, 48, 700, '#fff', seg(t, 2.5, 2.64), -1);
+      g.strokeStyle = '#fff'; g.lineWidth = 4; g.beginPath(); g.moveTo(APP.x + APP.w - 100, APP.y + 60); g.lineTo(APP.x + APP.w - 40, APP.y + 60);
+      g.moveTo(APP.x + APP.w - 58, APP.y + 42); g.lineTo(APP.x + APP.w - 40, APP.y + 60); g.lineTo(APP.x + APP.w - 58, APP.y + 78); g.stroke();
+    } else {
+      riseText('Sent', APP.x + 100, APP.y + 76, 48, 700, '#fff', sent, -1);
+      const ck = clamp((t - PRESS - .2) / .18);                  // 勾是线性画出来的
+      g.strokeStyle = SIG; g.lineWidth = 7; g.lineCap = 'square';
+      g.beginPath(); g.moveTo(APP.x + 36, APP.y + 60);
+      const p1 = clamp(ck * 2.2), p2 = clamp((ck - .45) / .55);
+      g.lineTo(APP.x + 36 + 16 * p1, APP.y + 60 + 16 * p1); if (p2 > 0) g.lineTo(APP.x + 52 + 26 * p2, APP.y + 76 - 34 * p2); g.stroke();
+    }
+    g.restore();
+  }
+
+  // 字幕是版式的一部分：左对齐在第 1 栏，逐词升起
+  g.fillStyle = RULE; g.fillRect(col(0), 868, span(5) * E(seg(t, CAP_T0 - .1, CAP_T0 + .2)), 1);
+  const words = CAP.split(' '); let x = col(0);
+  g.font = '760 64px Inter'; g.letterSpacing = '-1.3px';
+  words.forEach((w, i) => { riseText(w, x, 948, 64, 760, INK, seg(t, CAP_T0 + i * .1, CAP_T0 + i * .1 + .14), -1.3); g.font = '760 64px Inter'; g.letterSpacing = '-1.3px'; x += g.measureText(w + ' ').width; });
+  g.letterSpacing = '0px';
+};
+
+await document.fonts.ready;
+window.render(0);
+window.READY = true;
+</script>
+</body>
+</html>

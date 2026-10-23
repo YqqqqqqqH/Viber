@@ -1,6 +1,6 @@
 # Viber
 
-抖音「Vibe 知识大赏」式的无旁白知识短片。全片由代码逐帧画出。
+抖音「Vibe 知识大赏」式的无旁白知识短片，以及用同一套方法做的宣传片。全片由代码逐帧画出。
 
 ## 作品
 
@@ -9,6 +9,7 @@
 | [berkson](berkson/) | 《伯克森悖论》：好看的人为什么好像都不靠谱 | v3 · 3:32 · 2D Canvas，有配乐和拟音 | [berkson/versions](berkson/versions/) |
 | [luanjiyuan](luanjiyuan/) | 《乱纪元》：为什么天气预报只能准一周 | v4 · 3:35 · 3D（Three.js），只有画面 | [luanjiyuan/versions](luanjiyuan/versions/) |
 | [iphone18](iphone18/) | 《口袋里的六层楼》：把 iPhone 18 Pro Max 拆成六层楼，一层层看里面有什么 | v2 · 2:16 · 等轴测零件图（anatomy kit，SVG），每层一种颜色，只有字幕，有配乐和拟音 | [iphone18/versions](iphone18/versions/) |
+| [duet](duet/) | 《Two Lines》：Claude Duet 宣传片，你和 Claude 两根线，一首二重奏 | v1 · 0:58 · 一笔画 × 3D（Three.js），英文，无声 | [duet/versions](duet/versions/) |
 
 每个作品的文件夹里：
 

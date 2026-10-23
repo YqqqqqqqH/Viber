@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>duet · plan C preview</title>
+<style>html, body { margin: 0; background: #000; overflow: hidden }</style>
+<script type="importmap">
+{ "imports": { "three": "/node_modules/three/build/three.module.js", "three/addons/": "/node_modules/three/examples/jsm/" } }
+</script>
+</head>
+<body>
+<script type="module">
+// 方案 C《One Day》的招牌镜头（第 4 镜）：一天就是一根线，每个提醒是一座从纸上竖起来的尖峰。
+// 低机位横移，笔（看不见，只有影子）沿着这根线走过去，走过的地方尖峰一座座倒平；经过的整点写下它办完的事
+import { stage, Line, writing, camRig, penShadow, caption, capMetrics } from './ink3d.js';
+import { clamp, lerp, seg, ss, mulberry } from '/core/lib.js';
+
+const st = await stage();
+const LY = 600, rnd = mulberry(4), SP = [];
+for (let x = -300; x < 2500; x += 34 + rnd() * 60) SP.push({ x, h: .5 + rnd() * rnd() * 2.1 + (x > 300 ? .35 : 0), w: 16 + rnd() * 26 });
+const pts = [];
+for (let x = -400; x <= 2500; x += 2) {
+  let z = 0; for (const s of SP) { const d = Math.abs(x - s.x); if (d < s.w) z = Math.max(z, s.h * Math.pow(1 - d / s.w, 1.35)); }
+  pts.push([x, LY + Math.sin(x * .011) * 10 + Math.sin(x * .037) * 4, z]);
+}
+const L = new Line(st, { hw: .03 });
+L.piece(pts, -3, -1);                                            // 开场前这一天已经画好了：满是尖峰
+L.build();
+const PX = t => lerp(360, 1720, seg(t, .15, 3.5));               // 笔走到哪儿（匀速横移）
+L.dyn = (i, p, t) => { const k = ss((PX(t) - p.x) / 150); return k > 0 ? [p.x, p.y, p.z * (1 - k)] : null; };
+L.nibOverride = t => [PX(t), LY + Math.sin(PX(t) * .011) * 10, 0];
+
+const STOPS = [[620, '8:00', 'morning brief'], [1060, '10:00', 'meeting booked'], [1500, '13:00', 'forecast ready']];
+STOPS.forEach(([x, h, w]) => {
+  const t0 = seg(x, 360, 1720) * 3.35 + .15 + .05;
+  writing(st, h, x - 6, LY + 96, 54, t0);
+  writing(st, w, x - 4, LY + 150, 42, t0 + .18, { color: '#6b6157' });
+});
+
+const cam = camRig(st, [[0, [520, 600, 9.2, 15, -76, 0, .45]], [3.6, [1580, 600, 9.2, 17, -80, 0, .45]]],
+  t => L.nibAt(t), { focusNib: () => .7, aper: () => 60 });
+
+const CAP = 'It handles the noise.', CAP_T0 = .5;
+window.DUR = 3.6; window.EV = [];
+window.TEXTS = t => t < CAP_T0 + .6 ? [] : [{ id: 'cap', text: CAP, ...capMetrics(st, CAP) }];
+window.render = t => {
+  L.update(t); cam(t); st.draw(t);
+  penShadow(st, L.nibAt(t), 1);
+  caption(st, CAP, CAP_T0, t);
+};
+await document.fonts.ready;
+window.render(0);
+window.READY = true;
+</script>
+</body>
+</html>

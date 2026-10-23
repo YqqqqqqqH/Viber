@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>duet · one line</title>
+<style>html, body { margin: 0; background: #000; overflow: hidden } canvas { display: block }</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script type="module">
+// 样片 ⑥ lemo/one-line：一根墨线不离纸。先画信封、对话气泡、日历，越画越快缠成一团乱麻（越抖越细）→ 停住，落一个墨点 →
+// 一笔长线从乱麻里抽出来，干干净净画出一张卡和一个按钮 → 按下的那一笔变成唯一的强调色：橙色的勾 → 线继续往外走
+import { clamp, lerp, seg, eio, eo, mulberry, vnoise, track } from '/core/lib.js';
+
+const c = document.getElementById('c'), g = c.getContext('2d');
+const W = c.width = innerWidth, H = c.height = innerHeight, S = W / 1920;
+await new FontFace('Hand', 'url(fonts/Caveat-600.woff)').load().then(f => document.fonts.add(f));
+
+const PAPER = '#F4EFE4', INK = '#1D1A17', ACC = '#E2622E';
+const PRESS = 2.95;
+
+// ---------- 路径：一串带时间的点 ----------
+const P = [];                                                   // {x, y, t, acc, trem}
+function piece(pts, t0, t1, o = {}) {
+  const L = [0]; for (let i = 1; i < pts.length; i++) L.push(L[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+  const tot = L[L.length - 1] || 1, warp = o.warp || (u => u);
+  if (P.length && t0 > P[P.length - 1].t + 1e-6) P.push({ ...P[P.length - 1], t: t0, acc: !!o.acc });   // 停笔：同一个点上等到 t0
+  for (let i = P.length ? 1 : 0; i < pts.length; i++) P.push({ x: pts[i][0], y: pts[i][1], t: t0 + (t1 - t0) * warp(L[i] / tot), acc: !!o.acc, trem: o.trem || 0 });
+}
+const last = () => [P[P.length - 1].x, P[P.length - 1].y];
+function lineTo(a, b, n = 30) { const o = []; for (let i = 0; i <= n; i++) o.push([lerp(a[0], b[0], i / n), lerp(a[1], b[1], i / n)]); return o; }
+function bez(p0, p1, p2, p3, n = 60) { const o = []; for (let i = 0; i <= n; i++) { const t = i / n, u = 1 - t; o.push([u * u * u * p0[0] + 3 * u * u * t * p1[0] + 3 * u * t * t * p2[0] + t * t * t * p3[0], u * u * u * p0[1] + 3 * u * u * t * p1[1] + 3 * u * t * t * p2[1] + t * t * t * p3[1]]); } return o; }
+function poly(list, n = 20) { let o = []; for (let i = 1; i < list.length; i++) o = o.concat(lineTo(list[i - 1], list[i], n).slice(i > 1 ? 1 : 0)); return o; }
+function rrect(x, y, w, h, r) {                                 // 从左上角圆角的终点开始顺时针一圈
+  const o = [], arc = (cx, cy, a0) => { for (let i = 0; i <= 12; i++) { const a = a0 + i / 12 * Math.PI / 2; o.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]); } };
+  o.push(...lineTo([x + r, y], [x + w - r, y])); arc(x + w - r, y + r, -Math.PI / 2);
+  o.push(...lineTo([x + w, y + r], [x + w, y + h - r])); arc(x + w - r, y + h - r, 0);
+  o.push(...lineTo([x + w - r, y + h], [x + r, y + h])); arc(x + r, y + h - r, Math.PI / 2);
+  o.push(...lineTo([x, y + h - r], [x, y + r])); arc(x + r, y + r, Math.PI);
+  return o;
+}
+// 信封
+piece(poly([[210, 600], [210, 480], [290, 545], [370, 480], [370, 600], [210, 600], [250, 640]]), 0, .38);
+// 对话气泡：从底边进去，绕一圈，再拐出尾巴
+const near = (pts, x, y) => pts.reduce((bi, p, i) => Math.hypot(p[0] - x, p[1] - y) < Math.hypot(pts[bi][0] - x, pts[bi][1] - y) ? i : bi, 0);
+const rot = (pts, i) => pts.slice(i).concat(pts.slice(1, i + 1));   // 闭合路径换个起点
+const bub = rrect(430, 340, 170, 110, 26), bi = near(bub, 490, 450);
+piece(bez(last(), [300, 690], [470, 560], bub[bi], 30), .38, .48);
+piece(rot(bub, bi).concat(poly([bub[bi], [466, 494], [462, 450]], 8)), .48, .76);
+// 日历
+piece(bez(last(), [600, 430], [640, 470], [640, 500], 24), .76, .82);
+piece(poly([[640, 500], [800, 500], [800, 640], [640, 640], [640, 500], [640, 540], [800, 540], [760, 540], [760, 480], [760, 540], [680, 540], [680, 480]]), .82, 1.0);
+// 乱麻：越画越快、越抖
+const tangle = [], rr = mulberry(3);
+for (let i = 0; i <= 1400; i++) {
+  const u = i / 1400, th = u * Math.PI * 2 * 9, R = 70 + 190 * Math.sqrt(u);
+  tangle.push([520 + R * (Math.sin(th * 1.0 + .3) * .9 + .35 * Math.sin(th * 2.7 + 1.1)), 520 + R * .75 * (Math.cos(th * 1.31) + .3 * Math.cos(th * 3.3 + .5))]);
+}
+piece(bez(last(), [700, 420], [600, 420], tangle[0], 20), 1.0, 1.04);
+piece(tangle, 1.04, 1.5, { warp: u => Math.pow(u, .62), trem: 1 });
+const STOP = last();
+// 停住（墨点），然后一笔长线抽出来，画卡
+const CARD = { x: 1040, y: 230, w: 700, h: 470, r: 44 };
+piece(bez(STOP, [900, 300], [980, 180], [CARD.x + CARD.r, CARD.y], 50), 1.66, 1.86);
+const card = rot(rrect(CARD.x, CARD.y, CARD.w, CARD.h, CARD.r), 0);
+piece(card, 1.86, 2.32, { warp: u => eio(u) * .85 + u * .15 });
+// 按钮：卡画完回到左上角，沿左边内侧往下，绕按钮一圈，再从按钮底下穿到右边
+const BTN = { x: 1090, y: 580, w: 250, h: 76 };
+const btn = rrect(BTN.x, BTN.y, BTN.w, BTN.h, 38), bj = near(btn, BTN.x, BTN.y + 38);
+piece(bez(last(), [CARD.x + 30, CARD.y + 160], [CARD.x + 20, BTN.y + 40], btn[bj], 40), 2.32, 2.44);
+piece(rot(btn, bj), 2.44, 2.62);
+piece(bez(last(), [BTN.x + 20, BTN.y + 104], [BTN.x + BTN.w + 20, BTN.y + 104], [BTN.x + BTN.w + 40, BTN.y + 38], 30), 2.62, 2.78);
+const CK0 = last();
+// 唯一的强调色：橙色的勾
+piece(poly([CK0, [CK0[0] + 26, CK0[1] + 26], [CK0[0] + 78, CK0[1] - 36]], 16), PRESS, PRESS + .2, { acc: true });
+piece(bez(last(), [CK0[0] + 150, CK0[1] - 70], [1790, 760], [1860, 860], 50), PRESS + .2, 3.7);
+const T_END = P[P.length - 1].t;
+
+// ---------- 纸 ----------
+const paper = document.createElement('canvas'); paper.width = W; paper.height = H;
+{
+  const x = paper.getContext('2d'); x.fillStyle = PAPER; x.fillRect(0, 0, W, H);
+  const lo = document.createElement('canvas'); lo.width = 96; lo.height = 54; const l = lo.getContext('2d'), r = mulberry(9);
+  for (let i = 0; i < 96; i++) for (let j = 0; j < 54; j++) { const v = vnoise(i * .22 + vnoise(j * .3) * 3) * .5 + vnoise(j * .25 + 30) * .5; l.fillStyle = `rgba(${v > .5 ? '255,250,240' : '150,130,100'},${Math.abs(v - .5) * .16})`; l.fillRect(i, j, 1, 1); }
+  x.imageSmoothingQuality = 'high'; x.drawImage(lo, 0, 0, W, H);
+  for (let i = 0; i < 2600; i++) { x.fillStyle = `rgba(90,70,40,${.04 + r() * .08})`; x.fillRect(r() * W, r() * H, 1.4 * S, 1.4 * S); }
+  const v = x.createRadialGradient(W / 2, H / 2, H * .45, W / 2, H / 2, W * .7); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(60,40,20,.12)'); x.fillStyle = v; x.fillRect(0, 0, W, H);
+}
+
+function nibAt(t) {                                              // 第 t 秒笔尖的位置
+  if (t <= P[0].t) return [P[0].x, P[0].y];
+  let lo = 0, hi = P.length - 1; if (t >= P[hi].t) return [P[hi].x, P[hi].y];
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (P[m].t <= t) lo = m; else hi = m; }
+  const a = P[lo], b = P[hi], k = (t - a.t) / Math.max(1e-6, b.t - a.t); return [lerp(a.x, b.x, k), lerp(a.y, b.y, k)];
+}
+const zoomT = track([[0, [1.55]], [.95, [1.32]], [1.5, [1.2]], [2.2, [1.04]], [2.9, [1.0]], [4, [1.0]]]);
+function camera(t) {                                             // 镜头跟笔尖，带一点滞后（窗口平均，结果只由 t 决定）
+  let sx = 0, sy = 0; const n = 12;
+  for (let i = 0; i < n; i++) { const [x, y] = nibAt(t - .05 - .3 * i / n); sx += x; sy += y; }
+  const w = eio(seg(t, 1.6, 2.9));
+  return [lerp(sx / n, 980, w * .9 + .1), lerp(sy / n, 500, w * .9 + .1), zoomT(t)[0]];
+}
+
+function ink(t, z) {
+  g.lineCap = g.lineJoin = 'round';
+  for (let i = 1; i < P.length; i++) {
+    const a = P[i - 1], b = P[i]; if (a.t > t) break;
+    let bx = b.x, by = b.y;
+    if (b.t > t) { const k = (t - a.t) / (b.t - a.t); bx = lerp(a.x, b.x, k); by = lerp(a.y, b.y, k); }
+    const v = Math.hypot(b.x - a.x, b.y - a.y) / Math.max(1e-4, b.t - a.t);
+    const pr = .66 + .8 * Math.exp(-v / 300), wd = Math.max(1.6 / z, 7.5 * pr * (1 + .08 * (vnoise(i * .07) - .5)));
+    let ox = 0, oy = 0;
+    if (b.trem) { const tr = 4 * seg(a.t, 1.1, 1.5); ox = (vnoise(i * .9) - .5) * tr; oy = (vnoise(i * .9 + 50) - .5) * tr; }
+    g.strokeStyle = b.acc ? ACC : INK; g.lineWidth = b.acc ? wd * 1.5 : wd;
+    g.beginPath(); g.moveTo(a.x + ox, a.y + oy); g.lineTo(bx + ox, by + oy); g.stroke();
+  }
+  if (t > 1.5) {                                                 // 停顿留下的泪滴墨点
+    const k = eo(seg(t, 1.5, 1.62));
+    g.fillStyle = INK; g.beginPath(); g.arc(STOP[0], STOP[1], 9 * k, 0, 7); g.fill();
+    g.beginPath(); g.ellipse(STOP[0], STOP[1] + 7 * k, 7 * k, 9 * k, 0, 0, 7); g.fill();
+  }
+}
+function penShadow(t) {                                          // 笔不画出来，只有一片柔和的影子
+  if (t > T_END + .2) return;
+  const [x, y] = nibAt(t);
+  g.save(); g.filter = 'blur(14px)'; g.fillStyle = 'rgba(40,30,20,.16)';
+  g.beginPath(); g.moveTo(x + 6, y + 4); g.lineTo(x + 200, y - 150); g.lineTo(x + 228, y - 118); g.closePath(); g.fill(); g.restore();
+  g.fillStyle = 'rgba(29,26,23,.5)'; g.beginPath(); g.arc(x, y, 3, 0, 7); g.fill();
+}
+// 手写字：从左往右写出来，字后面垫一圈纸色
+function written(txt, x, y, size, t0, t, col = INK, align = 'left') {
+  if (t < t0) return;
+  g.save(); g.font = `${size}px Hand`; g.textAlign = align;
+  const w = g.measureText(txt).width, x0 = align === 'center' ? x - w / 2 : x;
+  const k = clamp((t - t0) / (.2 + .017 * txt.length));
+  g.beginPath(); g.rect(x0 - 10, y - size, (w + 20) * k, size * 1.4); g.clip();
+  g.globalAlpha = .84; g.lineWidth = 10; g.strokeStyle = PAPER; g.lineJoin = 'round'; g.strokeText(txt, x, y);
+  g.fillStyle = col; g.fillText(txt, x, y); g.restore();
+}
+
+const CAP = 'It asks before it acts.', CAP_T0 = .4;
+window.DUR = 4; window.EV = [];
+window.TEXTS = t => { if (t < CAP_T0 + .6) return []; g.font = `${62 * S}px Hand`; const w = g.measureText(CAP).width; return [{ id: 'cap', text: CAP, x0: (W - w) / 2, y0: 960 * S, x1: (W + w) / 2, y1: 1030 * S }]; };
+window.render = t => {
+  g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(paper, 0, 0);
+  const [cx, cy, z] = camera(t);
+  g.setTransform(S * z, 0, 0, S * z, S * (960 - cx * z), S * (540 - cy * z));
+  ink(t, z);
+  written('Claude Duet', CARD.x + 52, CARD.y + 78, 42, 2.18, t, '#6b6157');
+  written('Reply to Dana?', CARD.x + 48, CARD.y + 178, 100, 2.24, t);
+  written('“Yes, Friday works. Invoice attached.”', CARD.x + 52, CARD.y + 262, 44, 2.3, t, '#4a423a');
+  written('Approve', BTN.x + BTN.w / 2, BTN.y + 54, 52, 2.46, t, INK, 'center');
+  written('sent', CK0[0] + 92, CK0[1] + 14, 58, PRESS + .14, t);
+  penShadow(t);
+  g.setTransform(S, 0, 0, S, 0, 0);
+  written(CAP, 960, 1012, 62, CAP_T0, t, INK, 'center');
+};
+
+await document.fonts.ready;
+window.render(0);
+window.READY = true;
+</script>
+</body>
+</html>

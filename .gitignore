@@ -22,6 +22,8 @@ review/
 **/styles/*/fonts/
 **/styles/*.mp4
 **/styles/*/*.mp4
+**/previews/*.mp4
+**/previews/*/*.mp4
 
 # 杂项
 _*.txt

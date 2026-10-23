@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>duet · plan B preview</title>
+<style>html, body { margin: 0; background: #000; overflow: hidden }</style>
+<script type="importmap">
+{ "imports": { "three": "/node_modules/three/build/three.module.js", "three/addons/": "/node_modules/three/examples/jsm/" } }
+</script>
+</head>
+<body>
+<script type="module">
+// 方案 B《Two Lines》的招牌镜头（第 5 镜）：你的线（粗、活泼）从左边来，Claude 的线（细、稳）从右边来，
+// 在纸中间碰头，一起离开纸面绕成一对双螺旋往上长；镜头压低、绕过去，两道影子在纸上交错
+import { stage, Line, writing, camRig, penShadow, caption, capMetrics, bez } from './ink3d.js';
+import { clamp, lerp, seg, eio } from '/core/lib.js';
+
+const st = await stage();
+const M = [960, 540], R = 27, TURNS = 2.6, ZTOP = 3.8, H0 = 1.1, H1 = 3.3;
+function helix(phase) {                                          // 绕着 M 竖直往上的螺旋：x、y 用设计像素，z 用世界单位
+  const o = [], n = 900;
+  for (let i = 0; i <= n; i++) { const s = i / n, a = phase + s * TURNS * Math.PI * 2, r = R * (1 - .2 * s), cx = M[0] + 40 * Math.sin(s * 2.2), cy = M[1] + 20 * Math.sin(s * 1.7); o.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r, s * ZTOP]); }   // 两股绞在一起往上长，轴像藤一样微微弯
+  return o;
+}
+const you = new Line(st, { hw: .042 }), duet = new Line(st, { hw: .03 });
+// 你的线：一路小波浪，有点急
+const yw = []; for (let i = 0; i <= 160; i++) { const s = i / 160; yw.push([lerp(400, M[0] - R, s), lerp(720, M[1], eio(s)) + Math.sin(s * 26) * 18 * (1 - s), 0]); }
+you.piece(yw, 0, H0, { warp: s => Math.pow(s, .85) });
+you.piece(helix(Math.PI), H0, H1, { warp: s => s * .9 + .1 * s * s });
+// Claude 的线：一条稳的长弧
+duet.piece(bez([1530, 350], [1450, 280], [1200, 600], [M[0] + R, M[1]], 120), 0, H0);
+duet.piece(helix(0), H0, H1, { warp: s => s * .9 + .1 * s * s });
+you.build(); duet.build();
+
+writing(st, 'you', 390, 800, 60, .15, { t1: 1.25, fade: .4 });
+writing(st, 'Claude', 1560, 310, 60, .3, { t1: 1.25, fade: .4, align: 'right' });
+
+const mid = t => { const a = you.nibAt(Math.min(t, you.tEnd)), b = duet.nibAt(Math.min(t, duet.tEnd)); return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]; };
+const cam = camRig(st, [
+  [0, [960, 560, 18.5, 72, -90, 0, 0]], [H0, [960, 545, 12.5, 50, -86, 0, .3]], [2.2, [975, 540, 10.5, 24, -72, 0, 1.3]], [3.6, [985, 540, 10.8, 15, -58, 0, 1.75]]],
+  mid, { tEnd: H1, focusNib: () => 1, aper: t => lerp(40, 75, clamp((t - 1) / 1.5)) });
+
+const CAP = 'Two lines. One duet.', CAP_T0 = .5;
+window.DUR = 3.6; window.EV = [];
+window.TEXTS = t => t < CAP_T0 + .6 ? [] : [{ id: 'cap', text: CAP, ...capMetrics(st, CAP) }];
+window.render = t => {
+  you.update(t); duet.update(t); cam(t); st.draw(t);
+  const fade = 1 - seg(t, H1, H1 + .3);
+  penShadow(st, you.nibAt(Math.min(t, you.tEnd)), fade); penShadow(st, duet.nibAt(Math.min(t, duet.tEnd)), fade);
+  caption(st, CAP, CAP_T0, t);
+};
+await document.fonts.ready;
+window.render(0);
+window.READY = true;
+</script>
+</body>
+</html>

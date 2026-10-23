@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>duet · plan A preview</title>
+<style>html, body { margin: 0; background: #000; overflow: hidden }</style>
+<script type="importmap">
+{ "imports": { "three": "/node_modules/three/build/three.module.js", "three/addons/": "/node_modules/three/examples/jsm/" } }
+</script>
+</head>
+<body>
+<script type="module">
+// 方案 A《Untangle》的招牌镜头（第 4 镜）：悬在空中的那团线被一把拉直、铺回纸上，接着画出一张晨报，三行事一行一个圈
+import { stage, Line, writing, camRig, penShadow, caption, capMetrics, bez, poly, rrect, near, rot, bezAt } from './ink3d.js';
+import { clamp, lerp, seg, eio, ss } from '/core/lib.js';
+
+const st = await stage();
+const L = new Line(st);
+// 之前已经画好的：信封、气泡、日历，和空中的一团（负的时间 = 开场前就在纸上）
+L.piece(poly([[210, 600], [210, 480], [290, 545], [370, 480], [370, 600], [210, 600], [250, 640]]), -6, -5.6);
+const bub = rrect(430, 340, 170, 110, 26), bi = near(bub, 490, 450);
+L.piece(bez(L.last(), [300, 690], [470, 560], bub[bi], 30), -5.6, -5.5);
+L.piece(rot(bub, bi).concat(poly([bub[bi], [466, 494], [462, 450]], 8)), -5.5, -5.2);
+L.piece(bez(L.last(), [600, 430], [640, 470], [640, 500], 24), -5.2, -5.1);
+L.piece(poly([[640, 500], [800, 500], [800, 640], [640, 640], [640, 500], [640, 540], [800, 540], [760, 540], [760, 480], [760, 540], [680, 540], [680, 480]]), -5.1, -4.9);
+const knot = [];
+for (let i = 0; i <= 1500; i++) {
+  const q = i / 1500, th = q * Math.PI * 2 * 9, R = 70 + 190 * Math.sqrt(q);
+  knot.push([560 + R * (Math.sin(th + .3) * .9 + .35 * Math.sin(th * 2.7 + 1.1)), 520 + R * .75 * (Math.cos(th * 1.31) + .3 * Math.cos(th * 3.3 + .5)),
+    ss(q / .1) * (.25 + 1.5 * (.5 + .5 * Math.sin(th * .53 + 1)) * (.55 + .45 * Math.sin(th * .19 + 2)))]);
+}
+L.piece(bez(L.last(), [700, 420], [620, 560], knot[0], 20), -4.9, -4.8);
+const [K0, K1] = L.piece(knot, -4.8, -4, { tag: 'knot' });
+// 拉直：笔从线头出发，落到晨报的左上角
+const PULL0 = .2, PULL1 = .9;
+const SH = { x: 980, y: 160, w: 680, h: 580, r: 40 };
+const KE = L.P[K1], PEN = [[KE.x, KE.y, KE.z], [KE.x + 150, KE.y - 260, KE.z + .6], [SH.x - 220, SH.y - 40, .3], [SH.x + SH.r, SH.y, 0]];
+const A0 = L.P[K0];
+const pen = t => bezAt(PEN, eio(seg(t, PULL0, PULL1)));
+L.dyn = (i, p, t) => {
+  if (p.tag !== 'knot') return null;
+  const b = eio(seg(t, PULL0, PULL1)); if (b <= 0) return [p.x, p.y, p.z];
+  const q = pen(t);
+  return [lerp(p.x, lerp(A0.x, q[0], p.u), b), lerp(p.y, lerp(A0.y, q[1], p.u), b), lerp(p.z, q[2] * p.u, b)];
+};
+L.nibOverride = t => t < PULL1 ? L.pointAt(K1, t) : null;
+L.jump([SH.x + SH.r, SH.y, 0], PULL1);
+L.piece(rrect(SH.x, SH.y, SH.w, SH.h, SH.r), PULL1, PULL1 + .55, { warp: q => eio(q) * .8 + q * .2 });
+// 三个圈，一根竖线串起来
+const ROW = [390, 490, 590], BX = SH.x + 74;
+const circ = (cx, cy, r) => { const o = []; for (let i = 0; i <= 40; i++) { const a = -Math.PI / 2 + i / 40 * Math.PI * 2; o.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r, 0]); } return o; };
+L.piece(bez(L.last(), [SH.x + 30, SH.y + 120], [BX, ROW[0] - 80], [BX, ROW[0] - 22], 30), 1.45, 1.6);
+let t0 = 1.6;
+ROW.forEach((y, k) => {
+  L.piece(circ(BX, y, 22), t0, t0 + .2); t0 += .2;
+  if (k < 2) { L.piece(poly([[BX, y - 22], [BX - 6, y + 40], [BX, ROW[k + 1] - 22]], 10), t0, t0 + .1); t0 += .1; }
+});
+L.piece(bez(L.last(), [BX - 30, ROW[2] + 90], [SH.x + SH.w - 120, ROW[2] + 80], [2000, 640], 50), t0, t0 + .6);
+L.build();
+
+writing(st, 'Morning brief', SH.x + 50, SH.y + 120, 78, 1.2);
+writing(st, 'Tuesday · 3 things', SH.x + 56, SH.y + 178, 36, 1.4, { color: '#6b6157' });
+writing(st, 'Dana needs a yes on Friday', BX + 52, ROW[0] + 16, 44, 1.7);
+writing(st, 'Invoice #2041 is overdue', BX + 52, ROW[1] + 16, 44, 1.95);
+writing(st, 'Payroll runs tomorrow', BX + 52, ROW[2] + 16, 44, 2.2);
+
+const cam = camRig(st, [
+  [0, [560, 500, 8.6, 27, -64, .15]], [PULL1, [930, 470, 13, 46, -82, .1]], [1.9, [1310, 545, 14.6, 62, -90, 0]], [3.6, [1320, 548, 14.1, 64, -91, 0]]],
+  t => L.nibAt(t), { tEnd: L.tEnd, focusNib: t => 1 - clamp((t - 1.2) / .6), aper: t => lerp(70, 40, clamp(t / 1.5)) });
+
+const CAP = 'A morning brief. Only what matters.', CAP_T0 = .6;
+window.DUR = 3.6; window.EV = [];
+window.TEXTS = t => t < CAP_T0 + .8 ? [] : [{ id: 'cap', text: CAP, ...capMetrics(st, CAP) }];
+window.render = t => {
+  L.update(t); cam(t); st.draw(t);
+  penShadow(st, L.nibAt(Math.min(t, L.tEnd)), 1 - seg(t, L.tEnd, L.tEnd + .3));
+  caption(st, CAP, CAP_T0, t);
+};
+await document.fonts.ready;
+window.render(0);
+window.READY = true;
+</script>
+</body>
+</html>
